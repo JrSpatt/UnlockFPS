@@ -1,0 +1,1198 @@
+package com.spatt.unlockfps;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.graphics.LinearGradient;
+import android.graphics.Shader;
+import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.Editable;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.TextUtils;
+import android.text.TextWatcher;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
+import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.Switch;
+import android.widget.TextView;
+import java.text.SimpleDateFormat;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Deque;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+/** Unlock FPS home: target refresh rate, Beast mode, background settings and the app picker. */
+public class MainActivity extends Activity {
+    private static final int FILTER_ALL = 0;
+    private static final int FILTER_SELECTED = 1;
+    private static final int FILTER_GAMES = 2;
+    private static final int FILTER_SYSTEM = 3;
+    private static final int FILTER_COUNT = 4;
+
+    private static class AppEntry {
+        final String label;
+        final String packageName;
+        final Drawable icon;
+        final boolean isGame;
+        final boolean isSystem;
+        View row;
+        FrameLayout check;
+        TextView sub;
+
+        AppEntry(String label, String packageName, Drawable icon, boolean isGame, boolean isSystem) {
+            this.label = label;
+            this.packageName = packageName;
+            this.icon = icon;
+            this.isGame = isGame;
+            this.isSystem = isSystem;
+        }
+    }
+
+    private final List<AppEntry> allApps = new ArrayList<>();
+    private Set<String> selectedPackages;
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private final Runnable resetBtnRunnable = this::resetApplyButton;
+    private final Deque<String> logLines = new ArrayDeque<>();
+    private final List<TextView> segments = new ArrayList<>();
+    private final TextView[] filterChips = new TextView[FILTER_COUNT];
+    private LinearLayout segBar;
+    private TextView beastStrip;
+    private FrameLayout beastBtn;
+    private ImageView beastIcon;
+    private TextView captionText;
+
+    private TextView statusChip;
+    private TextView appCountText;
+    private TextView hzNumber;
+    private TextView applyBtn;
+    private TextView lastApplied;
+    private LinearLayout logCard;
+    private TextView logText;
+    private TextView logTileSub;
+    private TextView selectedCountText;
+    private LinearLayout listCard;
+    private TextView emptyText;
+    private Switch autoSwitch;
+    private boolean syncingUi = false;
+    private LinearLayout healthSlot;
+    private boolean serviceWasKilled = false;
+    private boolean batteryDismissed = false;
+    private int filter = FILTER_ALL;
+    private String query = "";
+
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(Lang.wrap(base));
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Themes.apply(this);
+        UiHelper.setupDarkBars(this);
+        selectedPackages = FpsApplier.syncInstalledGames(this);
+        GameCaps.init(this);
+        // A stale heartbeat means HyperOS killed the background service while we were away.
+        long beat = FpsApplier.lastServiceBeat(this);
+        serviceWasKilled = FpsApplier.isAutoEnabled(this) && beat > 0
+            && System.currentTimeMillis() - beat > 60_000L;
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+
+        content.addView(buildHeader());
+        healthSlot = new LinearLayout(this);
+        healthSlot.setOrientation(LinearLayout.VERTICAL);
+        content.addView(healthSlot);
+        content.addView(buildHero());
+        content.addView(buildSettings());
+        content.addView(buildTools());
+        content.addView(buildLog());
+        content.addView(buildAppsSection());
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(UiHelper.COL_BG);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(content);
+        UiHelper.applyNotchSafePadding(this, scroll, 16, 12, 24);
+        setContentView(scroll);
+
+        updateBeastUi();
+        updateSegments();
+        updateStatusChip(FpsApplier.isPowerKeeperInstalled(this));
+        applyNow(false, "App started");
+        syncServiceState(FpsApplier.isAutoEnabled(this));
+        loadInstalledAppsAsync();
+        GameCaps.refreshAsync(this, this::rebindTags);
+        if (!FpsApplier.isOnboarded(this)) {
+            startActivity(new Intent(this, OnboardingActivity.class));
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateHealth();
+        // The widget or the quick tile may have changed things while we were away.
+        syncingUi = true;
+        autoSwitch.setChecked(FpsApplier.isAutoEnabled(this));
+        syncingUi = false;
+        updateBeastUi();
+        updateSegments();
+        updateStatusChip(FpsApplier.isPowerKeeperInstalled(this));
+    }
+
+    /** Re-tags rows after a newer game list was downloaded. */
+    private void rebindTags() {
+        for (AppEntry e : allApps) if (e.sub != null) bindSub(e);
+        appendLog("Game list updated (v" + GameCaps.version() + ")");
+    }
+
+    // ---------------------------------------------------------------- health
+
+    private void updateHealth() {
+        healthSlot.removeAllViews();
+        if (FpsApplier.isSystemRefreshTooLow(this)) {
+            LinearLayout card = (LinearLayout) healthCard(R.string.health_refresh_title, R.string.health_refresh_body, null);
+            LinearLayout actions = (LinearLayout) card.getChildAt(card.getChildCount() - 1);
+            actions.removeAllViews();
+            actions.addView(actionChip(getString(R.string.health_open_display), UiHelper.COL_WARN,
+                v -> UiHelper.openDisplaySettings(this)));
+            TextView title = (TextView) ((LinearLayout) card.getChildAt(0)).getChildAt(1);
+            title.setText(getString(R.string.health_refresh_title, FpsApplier.getSystemRefreshSetting(this)));
+            healthSlot.addView(card);
+        } else if (serviceWasKilled) {
+            healthSlot.addView(healthCard(R.string.health_killed_title, R.string.health_killed_body, () -> {
+                serviceWasKilled = false;
+                updateHealth();
+            }));
+        } else if (!batteryDismissed && FpsApplier.isAutoEnabled(this) && !UiHelper.isBatteryUnrestricted(this)) {
+            healthSlot.addView(healthCard(R.string.health_battery_title, R.string.health_battery_body, () -> {
+                batteryDismissed = true;
+                updateHealth();
+            }));
+        }
+    }
+
+    private View healthCard(int titleRes, int bodyRes, Runnable onDismiss) {
+        LinearLayout card = UiHelper.card(this);
+        card.setBackground(UiHelper.pillBg(this, UiHelper.alpha(UiHelper.COL_WARN, 0.08f),
+            UiHelper.alpha(UiHelper.COL_WARN, 0.35f), 22));
+        card.setPadding(dp(16), dp(16), dp(16), dp(14));
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView ic = UiHelper.icon(this, R.drawable.ui_info, UiHelper.COL_WARN, 20);
+        ((LinearLayout.LayoutParams) ic.getLayoutParams()).rightMargin = dp(10);
+        head.addView(ic);
+        head.addView(UiHelper.text(this, getString(titleRes), 15, UiHelper.COL_TEXT, UiHelper.TF_BOLD),
+            new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        card.addView(head);
+        TextView body = UiHelper.text(this, getString(bodyRes), 13, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        body.setLineSpacing(dp(3), 1f);
+        body.setPadding(dp(30), dp(8), 0, dp(12));
+        card.addView(body);
+        LinearLayout actions = new LinearLayout(this);
+        actions.setPadding(dp(30), 0, 0, 0);
+        actions.addView(actionChip(getString(R.string.health_fix_battery), UiHelper.COL_WARN,
+            v -> UiHelper.requestBatteryExemption(this)));
+        actions.addView(actionChip(getString(R.string.health_autostart), UiHelper.COL_WARN,
+            v -> UiHelper.openAutostart(this)));
+        actions.addView(actionChip(getString(R.string.health_dismiss), UiHelper.COL_MUTED, v -> onDismiss.run()));
+        card.addView(actions);
+        return card;
+    }
+
+    private TextView actionChip(String label, int color, View.OnClickListener l) {
+        TextView c = UiHelper.text(this, label, 13, color, UiHelper.TF_BOLD);
+        c.setGravity(Gravity.CENTER);
+        c.setPadding(dp(12), 0, dp(12), 0);
+        c.setBackground(UiHelper.ripple(this, UiHelper.pillBg(this, 0, UiHelper.alpha(color, 0.4f), 99), 99));
+        c.setOnClickListener(l);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34));
+        lp.rightMargin = dp(8);
+        c.setLayoutParams(lp);
+        return c;
+    }
+
+    // ---------------------------------------------------------------- header
+
+    private View buildHeader() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(2), 0, 0, dp(6));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.ic_launcher);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(42), dp(42));
+        lp.rightMargin = dp(12);
+        bar.addView(logo, lp);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        col.addView(UiHelper.text(this, getString(R.string.app_name), 22, UiHelper.COL_TEXT, UiHelper.TF_BOLD));
+        TextView sub = UiHelper.text(this, deviceLine(), 12.5f, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        sub.setSingleLine(true);
+        sub.setEllipsize(TextUtils.TruncateAt.END);
+        sub.setPadding(0, dp(5), 0, 0);
+        col.addView(sub);
+        bar.addView(col);
+
+        View tester = UiHelper.iconButton(this, R.drawable.ui_gauge,
+            v -> startActivity(new Intent(this, FpsTesterActivity.class)));
+        ((LinearLayout.LayoutParams) tester.getLayoutParams()).rightMargin = dp(8);
+        bar.addView(tester);
+        bar.addView(UiHelper.iconButton(this, R.drawable.ui_more,
+            v -> startActivity(new Intent(this, AboutActivity.class))));
+        return bar;
+    }
+
+    private String deviceLine() {
+        int max = FpsApplier.getMaxSupportedFps(this);
+        if (max <= 0) {
+            return getString(R.string.main_device_line_unknown, FpsApplier.getDeviceName(this),
+                android.os.Build.VERSION.RELEASE);
+        }
+        return getString(R.string.main_device_line, FpsApplier.getDeviceName(this),
+            android.os.Build.VERSION.RELEASE, max);
+    }
+
+    // ---------------------------------------------------------------- hero
+
+    private View buildHero() {
+        LinearLayout hero = UiHelper.card(this);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            new int[]{UiHelper.COL_HERO_A, UiHelper.COL_SURFACE, UiHelper.COL_HERO_B});
+        bg.setCornerRadius(dp(28));
+        bg.setStroke(dp(1), UiHelper.alpha(UiHelper.COL_PRIMARY, 0.22f));
+        hero.setBackground(bg);
+        hero.setPadding(dp(20), dp(20), dp(20), dp(20));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        statusChip = UiHelper.chip(this, "", UiHelper.COL_TEAL);
+        top.addView(statusChip);
+        View spacer = new View(this);
+        top.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        appCountText = UiHelper.text(this, "", 13, UiHelper.COL_MUTED, UiHelper.TF_MEDIUM);
+        top.addView(appCountText);
+        hero.addView(top);
+
+        LinearLayout numRow = new LinearLayout(this);
+        numRow.setOrientation(LinearLayout.HORIZONTAL);
+        numRow.setGravity(Gravity.BOTTOM);
+        numRow.setPadding(0, dp(18), 0, 0);
+        hzNumber = UiHelper.text(this, "", 76, UiHelper.COL_TEXT, UiHelper.TF_DISPLAY);
+        hzNumber.setLetterSpacing(-0.03f);
+        float h = hzNumber.getTextSize();
+        hzNumber.getPaint().setShader(new LinearGradient(0, 0, 0, h,
+            new int[]{0xFFFFFFFF, UiHelper.mix(UiHelper.COL_PRIMARY, 0xFFFFFFFF, 0.6f), UiHelper.COL_PRIMARY}, null, Shader.TileMode.CLAMP));
+        numRow.addView(hzNumber);
+        TextView hz = UiHelper.text(this, "Hz", 24, UiHelper.COL_MUTED, UiHelper.TF_BOLD);
+        hz.setPadding(dp(6), 0, 0, dp(10));
+        numRow.addView(hz);
+        hero.addView(numRow);
+
+        captionText = UiHelper.text(this, getString(R.string.main_caption),
+            13.5f, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        captionText.setPadding(0, dp(6), 0, dp(18));
+        hero.addView(captionText);
+
+        // Segmented control
+        LinearLayout rateRow = new LinearLayout(this);
+        rateRow.setOrientation(LinearLayout.HORIZONTAL);
+        rateRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout seg = new LinearLayout(this);
+        segBar = seg;
+        seg.setOrientation(LinearLayout.HORIZONTAL);
+        seg.setBackground(UiHelper.pillBg(this, UiHelper.alpha(0xFF000000, 0.28f), UiHelper.COL_OUTLINE, 16));
+        seg.setPadding(dp(4), dp(4), dp(4), dp(4));
+        segments.clear();
+        for (int fps : FpsApplier.detectSupportedFps(this)) {
+            TextView s = UiHelper.text(this, String.valueOf(fps), 14, UiHelper.COL_MUTED, UiHelper.TF_BOLD);
+            s.setGravity(Gravity.CENTER);
+            s.setTag(fps);
+            s.setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                FpsApplier.setTargetFps(this, fps);
+                updateSegments();
+                if (FpsApplier.isAutoEnabled(this)) syncServiceState(true);
+                applyNow(true, "Target " + fps + "Hz");
+                UnlockTileService.requestTileSync(this);
+            });
+            seg.addView(s, new LinearLayout.LayoutParams(0, dp(42), 1f));
+            segments.add(s);
+        }
+        rateRow.addView(seg, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        // Shown instead of the rate picker while Beast mode is on
+        beastStrip = UiHelper.text(this, "", 14, UiHelper.COL_BEAST, UiHelper.TF_BOLD);
+        beastStrip.setGravity(Gravity.CENTER);
+        beastStrip.setSingleLine(true);
+        beastStrip.setBackground(UiHelper.pillBg(this, UiHelper.alpha(UiHelper.COL_BEAST, 0.12f),
+            UiHelper.alpha(UiHelper.COL_BEAST, 0.45f), 16));
+        rateRow.addView(beastStrip, new LinearLayout.LayoutParams(0, dp(50), 1f));
+
+        // Beast mode logo, always at the side of the rate picker
+        beastBtn = new FrameLayout(this);
+        beastIcon = new ImageView(this);
+        beastIcon.setImageResource(R.drawable.ui_beast);
+        beastBtn.addView(beastIcon, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
+        beastBtn.setClickable(true);
+        beastBtn.setOnClickListener(v -> onBeastTap(v));
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(50), dp(50));
+        bp.leftMargin = dp(8);
+        rateRow.addView(beastBtn, bp);
+        hero.addView(rateRow);
+
+        applyBtn = UiHelper.button(this, "", R.drawable.ui_zap, true, v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.CONFIRM);
+            applyNow(true, "Manual tap");
+        });
+        ((LinearLayout.LayoutParams) applyBtn.getLayoutParams()).topMargin = dp(12);
+        hero.addView(applyBtn);
+
+        lastApplied = UiHelper.text(this, "", 12, UiHelper.COL_DIM, UiHelper.TF_REGULAR);
+        lastApplied.setGravity(Gravity.CENTER);
+        lastApplied.setPadding(0, dp(12), 0, 0);
+        hero.addView(lastApplied, UiHelper.matchWrap(this, 0));
+        return hero;
+    }
+
+    private void updateSegments() {
+        if (!FpsApplier.panelDetected(this)) {
+            hzNumber.setText("—");
+            hzNumber.getPaint().setShader(null);
+            hzNumber.setTextColor(UiHelper.COL_DIM);
+            hzNumber.invalidate();
+            resetApplyButton();
+            return;
+        }
+        int active = FpsApplier.effectiveFps(this);
+        boolean beast = FpsApplier.isBeastEnabled(this);
+        int col = UiHelper.fpsColor(active);
+        hzNumber.setText(String.valueOf(active));
+        hzNumber.getPaint().setShader(new LinearGradient(0, 0, 0, hzNumber.getTextSize(),
+            new int[]{0xFFFFFFFF, UiHelper.mix(col, 0xFFFFFFFF, 0.45f), col}, null, Shader.TileMode.CLAMP));
+        hzNumber.invalidate();
+        int target = FpsApplier.getTargetFps(this);
+        for (TextView s : segments) {
+            int fps = (Integer) s.getTag();
+            boolean on = !beast && fps == target;
+            int c = UiHelper.fpsColor(fps);
+            s.setTextColor(on ? UiHelper.COL_ON_PRIMARY : UiHelper.alpha(c, 0.9f));
+            s.setBackground(on
+                ? UiHelper.gradientBg(this, 12, c, UiHelper.mix(c, 0xFFFFFFFF, 0.25f))
+                : UiHelper.ripple(this, null, 12));
+        }
+        resetApplyButton();
+    }
+
+    // ---------------------------------------------------------------- beast mode
+
+    /** Beast logo: coloured when on, grey and faded when off. The rate picker hides while it is on. */
+    private void updateBeastUi() {
+        boolean detected = FpsApplier.panelDetected(this);
+        boolean on = detected && FpsApplier.isBeastEnabled(this);
+        segBar.setVisibility(on || !detected ? View.GONE : View.VISIBLE);
+        beastStrip.setVisibility(on || !detected ? View.VISIBLE : View.GONE);
+        beastStrip.setTextColor(detected ? UiHelper.COL_BEAST : UiHelper.COL_WARN);
+        beastStrip.setText(detected ? getString(R.string.beast_strip, FpsApplier.getVerifiedMaxFps(this))
+            : getString(R.string.panel_unknown));
+        captionText.setText(getString(on ? R.string.beast_caption : R.string.main_caption));
+        beastIcon.setImageTintList(android.content.res.ColorStateList.valueOf(
+            on ? UiHelper.COL_BEAST : UiHelper.COL_DIM));
+        beastIcon.setAlpha(on ? 1f : 0.5f);
+        beastBtn.setBackground(UiHelper.ripple(this, on
+            ? UiHelper.pillBg(this, UiHelper.alpha(UiHelper.COL_BEAST, 0.16f), UiHelper.alpha(UiHelper.COL_BEAST, 0.6f), 16)
+            : UiHelper.pillBg(this, UiHelper.alpha(0xFF000000, 0.28f), UiHelper.COL_OUTLINE, 16), 16));
+    }
+
+    private void onBeastTap(View v) {
+        v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        if (FpsApplier.isBeastEnabled(this)) {
+            setBeast(false);
+        } else if (FpsApplier.getVerifiedMaxFps(this) <= 0) {
+            android.widget.Toast.makeText(this, getString(R.string.beast_unavailable),
+                android.widget.Toast.LENGTH_LONG).show();
+        } else if (FpsApplier.isBeastWarnHidden(this)) {
+            setBeast(true);
+        } else {
+            showBeastWarning();
+        }
+    }
+
+    private void setBeast(boolean on) {
+        FpsApplier.setBeastEnabled(this, on);
+        if (on) {
+            FpsApplier.invalidateBeastCache();
+        } else {
+            // There is no "undo" request: apps already raised may keep the rate until PowerKeeper restarts.
+            android.widget.Toast.makeText(this, getString(R.string.beast_off_note),
+                android.widget.Toast.LENGTH_LONG).show();
+        }
+        updateBeastUi();
+        updateSegments();
+        applyNow(true, on ? "Beast mode on" : "Beast mode off");
+        UnlockTileService.requestTileSync(this);
+        UnlockWidget.updateAll(this);
+    }
+
+    private void showBeastWarning() {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        final android.app.Dialog[] holder = new android.app.Dialog[1];
+
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView ic = UiHelper.icon(this, R.drawable.ui_beast, UiHelper.COL_BEAST, 30);
+        ((LinearLayout.LayoutParams) ic.getLayoutParams()).rightMargin = dp(12);
+        head.addView(ic);
+        head.addView(UiHelper.text(this, getString(R.string.beast_title), 20, UiHelper.COL_TEXT, UiHelper.TF_BOLD));
+        c.addView(head);
+
+        TextView body = UiHelper.text(this, getString(R.string.beast_warn_body, FpsApplier.getVerifiedMaxFps(this)),
+            14, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        body.setLineSpacing(dp(4), 1f);
+        body.setPadding(0, dp(14), 0, dp(10));
+        c.addView(body);
+
+        android.widget.CheckBox dontShow = new android.widget.CheckBox(this);
+        dontShow.setText(getString(R.string.beast_dont_show));
+        dontShow.setTextColor(UiHelper.COL_MUTED);
+        dontShow.setTextSize(13.5f);
+        dontShow.setButtonTintList(android.content.res.ColorStateList.valueOf(UiHelper.COL_BEAST));
+        c.addView(dontShow, UiHelper.matchWrap(this, 0));
+
+        TextView ok = UiHelper.button(this, getString(R.string.beast_ok), R.drawable.ui_check, true, v -> {
+            if (dontShow.isChecked()) FpsApplier.setBeastWarnHidden(this, true);
+            holder[0].dismiss();
+            setBeast(true);
+        });
+        ok.setBackground(UiHelper.ripple(this, UiHelper.gradientBg(this, 18, UiHelper.COL_BEAST, 0xFFFFA24A), 18));
+        ((LinearLayout.LayoutParams) ok.getLayoutParams()).topMargin = dp(14);
+        c.addView(ok);
+        TextView cancel = UiHelper.button(this, getString(R.string.beast_cancel), 0, false, v -> holder[0].dismiss());
+        ((LinearLayout.LayoutParams) cancel.getLayoutParams()).topMargin = dp(8);
+        c.addView(cancel);
+
+        holder[0] = UiHelper.sheet(this, c);
+        holder[0].show();
+    }
+
+    private void updateStatusChip(boolean pkFound) {
+        if (!pkFound) {
+            UiHelper.setChip(this, statusChip, getString(R.string.chip_pk_missing), UiHelper.COL_WARN);
+        } else if (FpsApplier.isAutoEnabled(this)) {
+            UiHelper.setChip(this, statusChip, getString(R.string.chip_active), UiHelper.COL_TEAL);
+        } else {
+            UiHelper.setChip(this, statusChip, getString(R.string.chip_manual), UiHelper.COL_PRIMARY);
+        }
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    private View buildSettings() {
+        LinearLayout card = UiHelper.card(this);
+        card.setPadding(dp(14), dp(4), dp(16), dp(4));
+
+        autoSwitch = UiHelper.styledSwitch(this);
+        autoSwitch.setChecked(FpsApplier.isAutoEnabled(this));
+        LinearLayout autoRow = UiHelper.row(this, R.drawable.ui_zap, UiHelper.COL_TEAL,
+            getString(R.string.set_bg_title), getString(R.string.set_bg_sub), autoSwitch, null);
+        autoRow.setOnClickListener(v -> autoSwitch.toggle());
+        autoRow.setBackground(UiHelper.ripple(this, null, 14));
+        autoSwitch.setOnCheckedChangeListener((b, on) -> {
+            if (syncingUi) return;
+            FpsApplier.setAutoEnabled(this, on);
+            syncServiceState(on);
+            UnlockWidget.updateAll(this);
+            updateStatusChip(FpsApplier.isPowerKeeperInstalled(this));
+            UnlockTileService.requestTileSync(this);
+            appendLog("Background override " + (on ? "on" : "off"));
+        });
+        card.addView(autoRow);
+        card.addView(UiHelper.divider(this, 58));
+
+        Switch addSwitch = UiHelper.styledSwitch(this);
+        addSwitch.setChecked(FpsApplier.isAutoAddGamesEnabled(this));
+        LinearLayout addRow = UiHelper.row(this, R.drawable.ui_gamepad, UiHelper.COL_ACCENT2,
+            getString(R.string.set_add_title), getString(R.string.set_add_sub), addSwitch, null);
+        addRow.setOnClickListener(v -> addSwitch.toggle());
+        addRow.setBackground(UiHelper.ripple(this, null, 14));
+        addSwitch.setOnCheckedChangeListener((b, on) -> {
+            FpsApplier.setAutoAddGamesEnabled(this, on);
+            if (on) {
+                selectedPackages = FpsApplier.syncInstalledGames(this);
+                applyNow(false, "Auto-add on");
+                loadInstalledAppsAsync();
+            } else {
+                appendLog("Auto-add games off");
+            }
+        });
+        card.addView(addRow);
+        card.addView(UiHelper.divider(this, 58));
+        card.addView(buildThemeRow());
+        card.addView(UiHelper.divider(this, 58));
+        card.addView(buildLanguageRow());
+        return card;
+    }
+
+    private View buildThemeRow() {
+        String cur = Themes.get(this);
+        LinearLayout swatches = new LinearLayout(this);
+        swatches.setGravity(Gravity.CENTER_VERTICAL);
+        for (String id : Themes.ALL) swatches.addView(themeSwatch(id, id.equals(cur)));
+        return UiHelper.row(this, R.drawable.ui_palette, UiHelper.COL_PRIMARY,
+            getString(R.string.set_theme_title), getString(Themes.nameRes(cur)), swatches, null);
+    }
+
+    private View themeSwatch(String id, boolean on) {
+        FrameLayout f = new FrameLayout(this);
+        android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
+        ring.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        ring.setColor(Themes.background(id));
+        ring.setStroke(dp(on ? 3 : 1), on ? Themes.accent(id) : UiHelper.alpha(Themes.accent(id), 0.55f));
+        f.setBackground(ring);
+        View dot = new View(this);
+        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+        d.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        d.setColor(Themes.accent(id));
+        dot.setBackground(d);
+        f.addView(dot, new FrameLayout.LayoutParams(dp(12), dp(12), Gravity.CENTER));
+        f.setAlpha(on ? 1f : 0.8f);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(30), dp(30));
+        lp.leftMargin = dp(8);
+        f.setLayoutParams(lp);
+        f.setClickable(true);
+        f.setOnClickListener(v -> {
+            if (id.equals(Themes.get(this))) return;
+            Themes.set(this, id);
+            recreate();
+        });
+        return f;
+    }
+
+    private View buildLanguageRow() {
+        String cur = Lang.get(this);
+        LinearLayout flags = new LinearLayout(this);
+        flags.setGravity(Gravity.CENTER_VERTICAL);
+        flags.addView(flagChip(R.drawable.flag_tr, Lang.TR, cur));
+        flags.addView(flagChip(R.drawable.flag_gb, Lang.EN, cur));
+        return UiHelper.row(this, R.drawable.ui_globe, UiHelper.COL_PRIMARY,
+            getString(R.string.set_lang_title),
+            getString(Lang.TR.equals(cur) ? R.string.lang_name_tr : R.string.lang_name_en), flags, null);
+    }
+
+    private View flagChip(int flagRes, String code, String current) {
+        boolean on = code.equals(current);
+        FrameLayout f = new FrameLayout(this);
+        f.setBackground(UiHelper.ripple(this, UiHelper.pillBg(this,
+            on ? UiHelper.alpha(UiHelper.COL_PRIMARY, 0.16f) : 0,
+            on ? UiHelper.alpha(UiHelper.COL_PRIMARY, 0.7f) : UiHelper.COL_OUTLINE, 12), 12));
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(flagRes);
+        iv.setAlpha(on ? 1f : 0.5f);
+        f.addView(iv, new FrameLayout.LayoutParams(dp(26), dp(17), Gravity.CENTER));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(44), dp(34));
+        lp.leftMargin = dp(8);
+        f.setLayoutParams(lp);
+        f.setClickable(true);
+        f.setOnClickListener(v -> {
+            if (code.equals(Lang.get(this))) return;
+            Lang.set(this, code);
+            GameCaps.reload(this);
+            UnlockTileService.requestTileSync(this);
+            UnlockWidget.updateAll(this);
+            recreate();
+        });
+        return f;
+    }
+
+    // ---------------------------------------------------------------- tools + log
+
+    private View buildTools() {
+        LinearLayout rowL = new LinearLayout(this);
+        rowL.setOrientation(LinearLayout.HORIZONTAL);
+        rowL.setLayoutParams(UiHelper.matchWrap(this, 12));
+
+        View tester = toolTile(R.drawable.ui_gauge, UiHelper.COL_PRIMARY, getString(R.string.tool_tester),
+            getString(R.string.tool_tester_sub), v -> startActivity(new Intent(this, FpsTesterActivity.class)));
+        LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        a.rightMargin = dp(6);
+        rowL.addView(tester, a);
+
+        View log = toolTile(R.drawable.ui_terminal, UiHelper.COL_MUTED, getString(R.string.tool_log),
+            getString(R.string.tool_log_show), v -> toggleLog());
+        logTileSub = UiHelper.subtitleOf(log);
+        LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        b.leftMargin = dp(6);
+        rowL.addView(log, b);
+        return rowL;
+    }
+
+    private View toolTile(int icon, int color, String title, String sub, View.OnClickListener l) {
+        LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.setPadding(dp(16), dp(16), dp(16), dp(16));
+        t.setBackground(UiHelper.ripple(this, UiHelper.pillBg(this, UiHelper.COL_SURFACE, UiHelper.COL_OUTLINE, 22), 22));
+        FrameLayout badge = UiHelper.iconBadge(this, icon, color);
+        ((LinearLayout.LayoutParams) badge.getLayoutParams()).rightMargin = 0;
+        ((LinearLayout.LayoutParams) badge.getLayoutParams()).bottomMargin = dp(14);
+        t.addView(badge);
+        t.addView(UiHelper.text(this, title, 15, UiHelper.COL_TEXT, UiHelper.TF_MEDIUM));
+        TextView s = UiHelper.text(this, sub, 12.5f, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        s.setTag("subtitle");
+        s.setPadding(0, dp(5), 0, 0);
+        t.addView(s);
+        t.setOnClickListener(l);
+        return t;
+    }
+
+    private View buildLog() {
+        logCard = UiHelper.card(this);
+        logCard.setBackground(UiHelper.pillBg(this, UiHelper.COL_LOG_BG, UiHelper.COL_OUTLINE, 20));
+        logCard.setPadding(dp(16), dp(14), dp(16), dp(16));
+        logCard.addView(UiHelper.overline(this, getString(R.string.log_title), UiHelper.COL_DIM));
+        logText = UiHelper.text(this, "", 11.5f, UiHelper.COL_MUTED, Typeface.MONOSPACE);
+        logText.setLineSpacing(dp(4), 1f);
+        logText.setPadding(0, dp(10), 0, 0);
+        logCard.addView(logText);
+        logCard.setVisibility(View.GONE);
+        return logCard;
+    }
+
+    private void toggleLog() {
+        boolean show = logCard.getVisibility() != View.VISIBLE;
+        logCard.setVisibility(show ? View.VISIBLE : View.GONE);
+        logTileSub.setText(getString(show ? R.string.tool_log_hide : R.string.tool_log_show));
+        if (show) {
+            logCard.setAlpha(0f);
+            logCard.setTranslationY(-dp(8));
+            logCard.animate().alpha(1f).translationY(0).setDuration(200).start();
+        }
+    }
+
+    // ---------------------------------------------------------------- apps
+
+    private View buildAppsSection() {
+        LinearLayout sec = new LinearLayout(this);
+        sec.setOrientation(LinearLayout.VERTICAL);
+        sec.setLayoutParams(UiHelper.matchWrap(this, 26));
+
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.BOTTOM);
+        head.setPadding(dp(4), 0, dp(4), 0);
+        TextView title = UiHelper.text(this, getString(R.string.apps_title), 20, UiHelper.COL_TEXT, UiHelper.TF_BOLD);
+        head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        selectedCountText = UiHelper.text(this, "", 13, UiHelper.COL_PRIMARY, UiHelper.TF_MEDIUM);
+        head.addView(selectedCountText);
+        sec.addView(head);
+
+        // Search field
+        LinearLayout search = new LinearLayout(this);
+        search.setGravity(Gravity.CENTER_VERTICAL);
+        search.setBackground(UiHelper.pillBg(this, UiHelper.COL_SURFACE, UiHelper.COL_OUTLINE, 18));
+        search.setPadding(dp(16), 0, dp(12), 0);
+        search.setLayoutParams(UiHelper.matchWrap(this, 12));
+        search.addView(UiHelper.icon(this, R.drawable.ui_search, UiHelper.COL_DIM, 18));
+        EditText box = new EditText(this);
+        box.setHint(getString(R.string.search_hint));
+        box.setHintTextColor(UiHelper.COL_DIM);
+        box.setTextColor(UiHelper.COL_TEXT);
+        box.setTextSize(14.5f);
+        box.setSingleLine(true);
+        box.setBackground(null);
+        box.setPadding(dp(12), dp(14), 0, dp(14));
+        box.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {
+                query = s.toString().trim().toLowerCase(Locale.ROOT);
+                refreshList();
+            }
+            @Override public void afterTextChanged(Editable s) {}
+        });
+        search.addView(box, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        sec.addView(search);
+
+        // Filter chips
+        android.widget.HorizontalScrollView chipScroll = new android.widget.HorizontalScrollView(this);
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        chipScroll.setLayoutParams(UiHelper.matchWrap(this, 12));
+        LinearLayout chips = new LinearLayout(this);
+        String[] names = {getString(R.string.filter_all), getString(R.string.filter_selected),
+            getString(R.string.filter_games), getString(R.string.filter_system)};
+        for (int i = 0; i < FILTER_COUNT; i++) {
+            final int f = i;
+            TextView c = UiHelper.text(this, names[i], 13, UiHelper.COL_MUTED, UiHelper.TF_MEDIUM);
+            c.setGravity(Gravity.CENTER);
+            c.setPadding(dp(14), 0, dp(14), 0);
+            c.setOnClickListener(v -> {
+                filter = f;
+                updateFilterChips();
+                refreshList();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(36));
+            lp.rightMargin = dp(8);
+            chips.addView(c, lp);
+            filterChips[i] = c;
+        }
+        chipScroll.addView(chips);
+        sec.addView(chipScroll);
+
+        // Explains why some games stay at 60 even when the override works
+        LinearLayout note = new LinearLayout(this);
+        note.setGravity(Gravity.TOP);
+        note.setBackground(UiHelper.pillBg(this, UiHelper.alpha(UiHelper.COL_WARN, 0.06f),
+            UiHelper.alpha(UiHelper.COL_WARN, 0.22f), 18));
+        note.setPadding(dp(14), dp(12), dp(14), dp(12));
+        note.setLayoutParams(UiHelper.matchWrap(this, 12));
+        ImageView ni = UiHelper.icon(this, R.drawable.ui_info, UiHelper.COL_WARN, 18);
+        ((LinearLayout.LayoutParams) ni.getLayoutParams()).rightMargin = dp(10);
+        note.addView(ni);
+        TextView nt = UiHelper.text(this,
+            getString(R.string.limit_note),
+            12.5f, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        nt.setLineSpacing(dp(3), 1f);
+        note.addView(nt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        sec.addView(note);
+
+        listCard = UiHelper.card(this);
+        listCard.setPadding(dp(14), dp(4), dp(14), dp(4));
+        emptyText = UiHelper.text(this, getString(R.string.loading_apps), 14, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        emptyText.setGravity(Gravity.CENTER);
+        emptyText.setPadding(0, dp(28), 0, dp(28));
+        listCard.addView(emptyText, UiHelper.matchWrap(this, 0));
+        sec.addView(listCard);
+
+        TextView hint = UiHelper.text(this,
+            getString(R.string.tip_keep_running),
+            12, UiHelper.COL_DIM, UiHelper.TF_REGULAR);
+        hint.setLineSpacing(dp(3), 1f);
+        hint.setPadding(dp(6), dp(16), dp(6), 0);
+        sec.addView(hint);
+
+        updateFilterChips();
+        return sec;
+    }
+
+    private void updateFilterChips() {
+        int apps = 0, selected = 0, games = 0, system = 0;
+        for (AppEntry e : allApps) {
+            if (e.isSystem) {
+                system++;
+            } else {
+                apps++;
+                if (selectedPackages.contains(e.packageName)) selected++;
+                if (e.isGame) games++;
+            }
+        }
+        int[] counts = {apps, selected, games, system};
+        String[] names = {getString(R.string.filter_all), getString(R.string.filter_selected),
+            getString(R.string.filter_games), getString(R.string.filter_system)};
+        for (int i = 0; i < FILTER_COUNT; i++) {
+            TextView c = filterChips[i];
+            boolean on = i == filter;
+            c.setText(allApps.isEmpty() ? names[i] : names[i] + "  " + counts[i]);
+            c.setTextColor(on ? UiHelper.COL_PRIMARY : UiHelper.COL_MUTED);
+            c.setBackground(UiHelper.ripple(this, UiHelper.pillBg(this,
+                on ? UiHelper.alpha(UiHelper.COL_PRIMARY, 0.14f) : UiHelper.COL_SURFACE,
+                on ? UiHelper.alpha(UiHelper.COL_PRIMARY, 0.45f) : UiHelper.COL_OUTLINE, 99), 99));
+        }
+        selectedCountText.setText(getString(R.string.apps_selected, selectedPackages.size()));
+    }
+
+    /**
+     * Renders an app icon into a bitmap at the size we actually show (48dp). Apps ship icons up to
+     * 512px+, and keeping ~150 of those decoded cost ~180 MB, which made HyperOS likely to kill
+     * the process (and the background service with it).
+     */
+    private Drawable smallIcon(Drawable d) {
+        int px = dp(48);
+        android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas c = new android.graphics.Canvas(b);
+        d.setBounds(0, 0, px, px);
+        d.draw(c);
+        return new android.graphics.drawable.BitmapDrawable(getResources(), b);
+    }
+
+    @Override
+    protected void onDestroy() {
+        // Let the icons go as soon as the screen closes; the background service stays light.
+        allApps.clear();
+        if (listCard != null) listCard.removeAllViews();
+        super.onDestroy();
+    }
+
+    private void loadInstalledAppsAsync() {
+        new Thread(() -> {
+            PackageManager pm = getPackageManager();
+            List<AppEntry> list = new ArrayList<>();
+            for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
+                if (pm.getLaunchIntentForPackage(ai.packageName) == null) continue;
+                if (getPackageName().equals(ai.packageName)) continue;
+                list.add(new AppEntry(pm.getApplicationLabel(ai).toString(), ai.packageName,
+                    smallIcon(pm.getApplicationIcon(ai)), FpsApplier.isGameApp(ai), FpsApplier.isSystemApp(ai)));
+            }
+            Collections.sort(list, (a, b) -> {
+                boolean as = selectedPackages.contains(a.packageName);
+                boolean bs = selectedPackages.contains(b.packageName);
+                if (as != bs) return as ? -1 : 1;
+                if (a.isGame != b.isGame) return a.isGame ? -1 : 1;
+                return a.label.compareToIgnoreCase(b.label);
+            });
+            ui.post(() -> {
+                allApps.clear();
+                allApps.addAll(list);
+                updateFilterChips();
+                refreshList();
+            });
+        }).start();
+    }
+
+    private void refreshList() {
+        listCard.removeAllViews();
+        int shown = 0;
+        for (AppEntry e : allApps) {
+            // System apps only ever show in the System tab
+            if (filter == FILTER_SYSTEM ? !e.isSystem : e.isSystem) continue;
+            if (filter == FILTER_SELECTED && !selectedPackages.contains(e.packageName)) continue;
+            if (filter == FILTER_GAMES && !e.isGame) continue;
+            if (!query.isEmpty()
+                && !e.label.toLowerCase(Locale.ROOT).contains(query)
+                && !e.packageName.toLowerCase(Locale.ROOT).contains(query)) continue;
+            if (e.row == null) buildRow(e);
+            if (shown > 0) listCard.addView(UiHelper.divider(this, 56));
+            if (e.row.getParent() != null) ((ViewGroup) e.row.getParent()).removeView(e.row);
+            listCard.addView(e.row);
+            shown++;
+        }
+        if (shown == 0) {
+            emptyText.setText(getString(allApps.isEmpty() ? R.string.loading_apps : R.string.no_match));
+            listCard.addView(emptyText);
+        }
+    }
+
+    private void buildRow(AppEntry e) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(12), dp(2), dp(12));
+        row.setBackground(UiHelper.ripple(this, null, 14));
+
+        ImageView iv = new ImageView(this);
+        iv.setImageDrawable(e.icon);
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(42), dp(42));
+        ip.rightMargin = dp(14);
+        row.addView(iv, ip);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        TextView name = UiHelper.text(this, e.label, 15.5f, UiHelper.COL_TEXT, UiHelper.TF_MEDIUM);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        col.addView(name);
+
+        TextView pkg = UiHelper.text(this, "", 12, UiHelper.COL_DIM, UiHelper.TF_REGULAR);
+        pkg.setSingleLine(true);
+        pkg.setEllipsize(TextUtils.TruncateAt.END);
+        pkg.setPadding(0, dp(5), 0, 0);
+        col.addView(pkg);
+        e.sub = pkg;
+        bindSub(e);
+        row.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        FrameLayout check = new FrameLayout(this);
+        ImageView tick = UiHelper.icon(this, R.drawable.ui_check, UiHelper.COL_ON_PRIMARY, 16);
+        check.addView(tick, new FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER));
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(dp(26), dp(26));
+        cp.leftMargin = dp(12);
+        row.addView(check, cp);
+
+        e.row = row;
+        e.check = check;
+        styleCheck(e, false);
+        row.setOnLongClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showGameSheet(e);
+            return true;
+        });
+        row.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            boolean nowOn = !selectedPackages.contains(e.packageName);
+            if (nowOn) selectedPackages.add(e.packageName);
+            else selectedPackages.remove(e.packageName);
+            FpsApplier.setPackageIgnored(this, e.packageName, !nowOn);
+            FpsApplier.savePackages(this, selectedPackages);
+            appendLog((nowOn ? "Added " : "Removed ") + e.packageName);
+            styleCheck(e, true);
+            updateFilterChips();
+            applyNow(true, "Selection updated");
+        });
+    }
+
+    /** Second line of a row: limit tag, per-game rate, package name. */
+    private void bindSub(AppEntry e) {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        GameCaps.Info caps = GameCaps.get(e.packageName);
+        String tag = null;
+        int tagColor = UiHelper.COL_TEAL;
+        if (caps != null) {
+            if (caps.cap == GameCaps.MAX_60) {
+                tag = getString(R.string.tag_60);
+                tagColor = UiHelper.COL_WARN;
+            } else if (caps.cap == GameCaps.MAX_90) {
+                tag = getString(R.string.tag_90);
+                tagColor = UiHelper.COL_PRIMARY;
+            } else {
+                tag = getString(R.string.tag_120);
+            }
+        } else if (e.isGame) {
+            tag = getString(R.string.tag_game);
+        }
+        if (tag != null) {
+            sb.append(tag);
+            sb.setSpan(new ForegroundColorSpan(tagColor), 0, tag.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sb.setSpan(new StyleSpan(Typeface.BOLD), 0, tag.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sb.append("  \u00B7  ");
+        }
+        int own = FpsApplier.getGameFps(this, e.packageName);
+        if (own > 0) {
+            int st = sb.length();
+            sb.append(own + "Hz");
+            sb.setSpan(new ForegroundColorSpan(UiHelper.COL_TEXT), st, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sb.setSpan(new StyleSpan(Typeface.BOLD), st, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sb.append("  \u00B7  ");
+        }
+        sb.append(e.packageName);
+        e.sub.setText(sb);
+    }
+
+    // ---------------------------------------------------------------- game sheet
+
+    private void showGameSheet(AppEntry e) {
+        GameCaps.Info caps = GameCaps.get(e.packageName);
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        final android.app.Dialog[] holder = new android.app.Dialog[1];
+
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView iv = new ImageView(this);
+        iv.setImageDrawable(e.icon);
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(48), dp(48));
+        ip.rightMargin = dp(14);
+        head.addView(iv, ip);
+        LinearLayout hc = new LinearLayout(this);
+        hc.setOrientation(LinearLayout.VERTICAL);
+        hc.addView(UiHelper.text(this, e.label, 18, UiHelper.COL_TEXT, UiHelper.TF_BOLD));
+        TextView tagLine = UiHelper.text(this, "", 12.5f, UiHelper.COL_DIM, UiHelper.TF_REGULAR);
+        tagLine.setPadding(0, dp(4), 0, 0);
+        tagLine.setText(e.sub.getText());
+        tagLine.setSingleLine(true);
+        tagLine.setEllipsize(TextUtils.TruncateAt.END);
+        hc.addView(tagLine);
+        head.addView(hc, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        c.addView(head);
+
+        TextView tip = UiHelper.text(this, caps != null ? caps.note : getString(R.string.dlg_tip_unknown),
+            14, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        tip.setLineSpacing(dp(4), 1f);
+        tip.setPadding(0, dp(16), 0, 0);
+        c.addView(tip);
+
+        TextView rateLabel = UiHelper.overline(this, getString(R.string.dlg_rate_title), UiHelper.COL_DIM);
+        rateLabel.setPadding(dp(2), dp(22), 0, dp(10));
+        c.addView(rateLabel);
+        LinearLayout seg = new LinearLayout(this);
+        seg.setBackground(UiHelper.pillBg(this, UiHelper.alpha(0xFF000000, 0.28f), UiHelper.COL_OUTLINE, 16));
+        seg.setPadding(dp(4), dp(4), dp(4), dp(4));
+        List<TextView> opts = new ArrayList<>();
+        int[] rates = FpsApplier.detectSupportedFps(this);
+        int[] values = new int[rates.length + 1];
+        values[0] = 0;
+        System.arraycopy(rates, 0, values, 1, rates.length);
+        for (int val : values) {
+            String label = val == 0
+                ? (FpsApplier.getTargetFps(this) > 0
+                    ? getString(R.string.dlg_rate_default, FpsApplier.getTargetFps(this))
+                    : getString(R.string.dlg_rate_default_plain))
+                : String.valueOf(val);
+            TextView o = UiHelper.text(this, label, 13.5f, UiHelper.COL_MUTED, UiHelper.TF_BOLD);
+            o.setGravity(Gravity.CENTER);
+            o.setSingleLine(true);
+            o.setTag(val);
+            o.setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                FpsApplier.setGameFps(this, e.packageName, val);
+                styleOptions(opts, val);
+                bindSub(e);
+                tagLine.setText(e.sub.getText());
+                android.widget.Toast.makeText(this, val == 0
+                    ? getString(R.string.game_rate_default, e.label)
+                    : getString(R.string.game_rate_saved, e.label, val), android.widget.Toast.LENGTH_SHORT).show();
+                appendLog(e.packageName + " rate " + (val == 0 ? "default" : val + "Hz"));
+                if (selectedPackages.contains(e.packageName)) applyNow(false, "Game rate");
+            });
+            seg.addView(o, new LinearLayout.LayoutParams(0, dp(40), val == 0 ? 1.9f : 1f));
+            opts.add(o);
+        }
+        styleOptions(opts, FpsApplier.getGameFps(this, e.packageName));
+        c.addView(seg, UiHelper.matchWrap(this, 0));
+
+        TextView spacer = new TextView(this);
+        c.addView(spacer, new LinearLayout.LayoutParams(1, dp(16)));
+        TextView close = UiHelper.button(this, getString(R.string.dlg_close), 0, false, v -> holder[0].dismiss());
+        close.setBackground(UiHelper.ripple(this, null, 18));
+        close.setTextColor(UiHelper.COL_MUTED);
+        ((LinearLayout.LayoutParams) close.getLayoutParams()).topMargin = dp(4);
+        c.addView(close);
+
+        holder[0] = UiHelper.sheet(this, c);
+        holder[0].show();
+    }
+
+    private void styleOptions(List<TextView> opts, int selected) {
+        for (TextView o : opts) {
+            int val = (Integer) o.getTag();
+            boolean on = val == selected;
+            int c = val == 0 ? UiHelper.COL_PRIMARY : UiHelper.fpsColor(val);
+            o.setTextColor(on ? UiHelper.COL_ON_PRIMARY : (val == 0 ? UiHelper.COL_MUTED : UiHelper.alpha(c, 0.9f)));
+            o.setBackground(on ? UiHelper.gradientBg(this, 12, c, UiHelper.mix(c, 0xFFFFFFFF, 0.25f))
+                : UiHelper.ripple(this, null, 12));
+        }
+    }
+
+    private void styleCheck(AppEntry e, boolean animate) {
+        boolean on = selectedPackages.contains(e.packageName);
+        GradientDrawable d;
+        if (on) {
+            d = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{UiHelper.COL_PRIMARY, UiHelper.COL_ACCENT2});
+        } else {
+            d = new GradientDrawable();
+            d.setColor(0);
+            d.setStroke(dp(2), UiHelper.COL_STROKE_STRONG);
+        }
+        d.setShape(GradientDrawable.OVAL);
+        e.check.setBackground(d);
+        e.check.getChildAt(0).setVisibility(on ? View.VISIBLE : View.INVISIBLE);
+        if (animate) {
+            e.check.setScaleX(0.7f);
+            e.check.setScaleY(0.7f);
+            e.check.animate().scaleX(1f).scaleY(1f).setDuration(260)
+                .setInterpolator(new OvershootInterpolator(2.5f)).start();
+        }
+    }
+
+    // ---------------------------------------------------------------- apply
+
+    private void syncServiceState(boolean enabled) {
+        Intent svc = new Intent(this, Auto120Service.class);
+        if (enabled) startForegroundService(svc);
+        else stopService(svc);
+    }
+
+    private void applyNow(boolean animateBtn, String reason) {
+        if (!FpsApplier.panelDetected(this)) {
+            lastApplied.setText(getString(R.string.panel_unknown));
+            return;
+        }
+        FpsApplier.ApplyResult res = FpsApplier.apply120Hz(this, selectedPackages);
+        updateStatusChip(res.powerKeeperFound);
+        appCountText.setText(getResources().getQuantityString(R.plurals.apps_count, res.count, res.count));
+        String ts = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
+        lastApplied.setText(res.powerKeeperFound
+            ? getString(R.string.last_sent, res.fps, res.count, ts)
+            : getString(R.string.pk_not_found_long));
+
+        String preview = "";
+        if (!res.packages.isEmpty()) {
+            int show = Math.min(2, res.packages.size());
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < show; i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(res.packages.get(i));
+            }
+            if (res.packages.size() > show) sb.append(" +").append(res.packages.size() - show);
+            preview = " [" + sb + "]";
+        }
+        appendLog(reason + ": " + res.fps + "Hz → " + res.count + " apps"
+            + (res.powerKeeperFound ? "" : " (PowerKeeper missing)") + preview);
+
+        if (animateBtn) animateApplyButton(res);
+        UnlockWidget.updateAll(this);
+    }
+
+    private void animateApplyButton(FpsApplier.ApplyResult res) {
+        ui.removeCallbacks(resetBtnRunnable);
+        applyBtn.animate().cancel();
+        applyBtn.setScaleX(0.96f);
+        applyBtn.setScaleY(0.96f);
+        applyBtn.animate().scaleX(1f).scaleY(1f).setDuration(240)
+            .setInterpolator(new DecelerateInterpolator()).start();
+        if (res.powerKeeperFound) {
+            applyBtn.setText(getString(R.string.btn_sent, res.fps, res.count));
+            setButtonIcon(R.drawable.ui_check);
+            applyBtn.setBackground(UiHelper.ripple(this,
+                UiHelper.gradientBg(this, 18, UiHelper.COL_TEAL, 0xFF5EEAD4), 18));
+        } else {
+            applyBtn.setText(getString(R.string.btn_pk_not_found));
+            applyBtn.setBackground(UiHelper.ripple(this,
+                UiHelper.gradientBg(this, 18, UiHelper.COL_WARN, 0xFFFCD34D), 18));
+        }
+        ui.postDelayed(resetBtnRunnable, 1500);
+    }
+
+    private void resetApplyButton() {
+        boolean detected = FpsApplier.panelDetected(this);
+        applyBtn.setEnabled(detected);
+        applyBtn.setAlpha(detected ? 1f : 0.5f);
+        applyBtn.setText(detected ? getString(R.string.btn_apply, FpsApplier.effectiveFps(this))
+            : getString(R.string.panel_unknown));
+        setButtonIcon(R.drawable.ui_zap);
+        UiHelper.styleButton(this, applyBtn, true);
+    }
+
+    private void setButtonIcon(int res) {
+        Drawable d = getDrawable(res).mutate();
+        d.setTint(UiHelper.COL_ON_PRIMARY);
+        d.setBounds(0, 0, dp(18), dp(18));
+        applyBtn.setCompoundDrawables(d, null, null, null);
+    }
+
+    private void appendLog(String msg) {
+        String ts = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
+        logLines.addLast(ts + "  " + msg);
+        while (logLines.size() > 6) logLines.removeFirst();
+        logText.setText(TextUtils.join("\n", logLines));
+    }
+
+    private int dp(float v) {
+        return UiHelper.dp(this, v);
+    }
+}

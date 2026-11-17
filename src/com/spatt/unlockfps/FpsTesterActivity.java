@@ -1,0 +1,433 @@
+package com.spatt.unlockfps;
+
+import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.SweepGradient;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.Choreographer;
+import android.view.Display;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+/** Live FPS tester: measures real frame delivery with Choreographer and gives a verdict. */
+public class FpsTesterActivity extends Activity implements Choreographer.FrameCallback {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(Lang.wrap(base));
+    }
+
+    private GaugeView gauge;
+    private MotionBarView motionBar;
+    private TextView verdictChip;
+    private TextView verdictText;
+    private TextView statDisplay;
+    private TextView statTarget;
+    private TextView applyBtn;
+    private boolean running = false;
+    private long windowStartNs = 0L;
+    private int frameCount = 0;
+    private int sampleCount = 0;
+    private float measuredFps = 0f;
+    private float displayHz = 0f;
+    private int maxHz = 120;
+    private int testFps = 120;
+    private final java.util.List<TextView> testSegs = new java.util.ArrayList<>();
+
+    /** 240° arc gauge with labelled refresh-rate ticks. */
+    private static final class GaugeView extends View {
+        private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint arc = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint tick = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint big = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint small = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF oval = new RectF();
+        private final int[] marks;
+        private final float max;
+        private final float density;
+        private float value = 0f;
+        private float shown = 0f;
+        String fpsLabel = "FPS";
+
+        GaugeView(Context ctx, int[] marks, int maxHz) {
+            super(ctx);
+            this.marks = marks;
+            this.max = Math.max(maxHz, 60) * 1.1f;
+            density = ctx.getResources().getDisplayMetrics().density;
+            float sw = 14 * density;
+            track.setStyle(Paint.Style.STROKE);
+            track.setStrokeWidth(sw);
+            track.setStrokeCap(Paint.Cap.ROUND);
+            track.setColor(UiHelper.COL_TRACK);
+            arc.setStyle(Paint.Style.STROKE);
+            arc.setStrokeWidth(sw);
+            arc.setStrokeCap(Paint.Cap.ROUND);
+            tick.setStrokeWidth(2 * density);
+            tick.setStrokeCap(Paint.Cap.ROUND);
+            label.setTextSize(11 * density);
+            label.setTextAlign(Paint.Align.CENTER);
+            label.setTypeface(UiHelper.TF_BOLD);
+            big.setTextSize(58 * density);
+            big.setTextAlign(Paint.Align.CENTER);
+            big.setTypeface(UiHelper.TF_DISPLAY);
+            big.setColor(UiHelper.COL_TEXT);
+            small.setTextSize(13 * density);
+            small.setTextAlign(Paint.Align.CENTER);
+            small.setTypeface(UiHelper.TF_BOLD);
+            small.setLetterSpacing(0.2f);
+            small.setColor(UiHelper.COL_MUTED);
+        }
+
+        void setValue(float v) {
+            value = v;
+            invalidate();
+        }
+
+        @Override
+        protected void onMeasure(int w, int h) {
+            int width = MeasureSpec.getSize(w);
+            setMeasuredDimension(width, (int) (width * 0.62f));
+        }
+
+        @Override
+        protected void onSizeChanged(int w, int h, int ow, int oh) {
+            float sw = arc.getStrokeWidth();
+            float r = Math.min(w * 0.34f, h * 0.42f);
+            float cx = w / 2f, cy = h * 0.60f;
+            oval.set(cx - r, cy - r, cx + r, cy + r);
+            SweepGradient sg = new SweepGradient(cx, cy,
+                new int[]{UiHelper.COL_INDIGO, UiHelper.COL_PRIMARY, UiHelper.COL_TEAL, UiHelper.COL_INDIGO},
+                new float[]{0f, 0.35f, 0.66f, 1f});
+            Matrix m = new Matrix();
+            m.setRotate(140f - 10f, cx, cy);
+            sg.setLocalMatrix(m);
+            arc.setShader(sg);
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            shown += (value - shown) * 0.18f;
+            float start = 150f, sweep = 240f;
+            c.drawArc(oval, start, sweep, false, track);
+            float frac = Math.max(0.005f, Math.min(1f, shown / max));
+            c.drawArc(oval, start, sweep * frac, false, arc);
+
+            float cx = oval.centerX(), cy = oval.centerY(), r = oval.width() / 2f;
+            for (int hz : marks) {
+                double a = Math.toRadians(start + sweep * Math.min(1f, hz / max));
+                float cos = (float) Math.cos(a), sin = (float) Math.sin(a);
+                float r1 = r + 14 * density, r2 = r + 20 * density, rl = r + 34 * density;
+                boolean reached = shown >= hz - 4;
+                tick.setColor(reached ? UiHelper.COL_TEXT : UiHelper.COL_DIM);
+                label.setColor(reached ? UiHelper.COL_TEXT : UiHelper.COL_DIM);
+                c.drawLine(cx + r1 * cos, cy + r1 * sin, cx + r2 * cos, cy + r2 * sin, tick);
+                c.drawText(String.valueOf(hz), cx + rl * cos, cy + rl * sin + 4 * density, label);
+            }
+            c.drawText(shown < 1 ? "--" : String.valueOf(Math.round(shown)), cx, cy + 14 * density, big);
+            c.drawText(fpsLabel, cx, cy + 40 * density, small);
+            if (Math.abs(value - shown) > 0.2f) postInvalidateOnAnimation();
+        }
+    }
+
+    /** A puck bouncing across a track; judder is easy to see at low refresh rates. */
+    private static final class MotionBarView extends View {
+        private final Paint trackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint puck = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint ghost = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final float[] trail = new float[5];
+        private float pos = 0f;
+        private float dir = 1f;
+        private long lastNs = 0L;
+
+        MotionBarView(Context ctx) {
+            super(ctx);
+            trackPaint.setColor(UiHelper.COL_TRACK_DARK);
+            puck.setColor(UiHelper.COL_PRIMARY);
+            ghost.setColor(UiHelper.COL_PRIMARY);
+        }
+
+        void step(long frameTimeNanos) {
+            if (lastNs != 0L) {
+                float dt = Math.min((frameTimeNanos - lastNs) / 1_000_000_000f, 0.05f);
+                System.arraycopy(trail, 0, trail, 1, trail.length - 1);
+                trail[0] = pos;
+                pos += dir * dt * 1.6f;
+                if (pos >= 1f) { pos = 1f; dir = -1f; }
+                else if (pos <= 0f) { pos = 0f; dir = 1f; }
+            }
+            lastNs = frameTimeNanos;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth(), h = getHeight(), r = h / 2f;
+            canvas.drawRoundRect(0, 0, w, h, r, r, trackPaint);
+            float pad = 4 * getResources().getDisplayMetrics().density;
+            float d = h - pad * 2, travel = w - pad * 2 - d;
+            for (int i = trail.length - 1; i >= 0; i--) {
+                ghost.setAlpha(Math.round(70f * (1f - (i + 1f) / (trail.length + 1f))));
+                float x = pad + trail[i] * travel;
+                canvas.drawRoundRect(x, pad, x + d, pad + d, d / 2, d / 2, ghost);
+            }
+            float x = pad + pos * travel;
+            canvas.drawRoundRect(x, pad, x + d, pad + d, d / 2, d / 2, puck);
+        }
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Themes.apply(this);
+        UiHelper.setupDarkBars(this);
+        maxHz = FpsApplier.getMaxSupportedFps(this);
+        final boolean panelKnown = maxHz > 0;
+        if (!panelKnown) maxHz = 60; // only for drawing the gauge; nothing is sent in this case
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.addView(UiHelper.topBar(this, getString(R.string.tester_title)));
+
+        // Gauge card
+        LinearLayout card = UiHelper.card(this);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(16), dp(18), dp(16), dp(20));
+        int tgt = FpsApplier.getTargetFps(this);
+        testFps = tgt > 0 ? Math.min(tgt, maxHz) : 60;
+        verdictChip = UiHelper.chip(this, getString(R.string.tester_measuring), UiHelper.COL_PRIMARY);
+        card.addView(verdictChip, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        int[] gaugeRates = FpsApplier.detectSupportedFps(this);
+        gauge = new GaugeView(this, gaugeRates.length == 0 ? new int[]{60} : gaugeRates, maxHz);
+        LinearLayout.LayoutParams gp = UiHelper.matchWrap(this, 4);
+        card.addView(gauge, gp);
+        verdictText = UiHelper.text(this, getString(R.string.tester_keep_open),
+            13.5f, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
+        verdictText.setGravity(Gravity.CENTER);
+        verdictText.setLineSpacing(dp(3), 1f);
+        verdictText.setPadding(dp(8), 0, dp(8), 0);
+        card.addView(verdictText);
+
+        TextView testLabel = UiHelper.overline(this, getString(R.string.tester_test_at), UiHelper.COL_DIM);
+        testLabel.setPadding(dp(4), dp(20), 0, dp(10));
+        card.addView(testLabel, UiHelper.matchWrap(this, 0));
+        LinearLayout seg = new LinearLayout(this);
+        seg.setBackground(UiHelper.pillBg(this, UiHelper.alpha(0xFF000000, 0.28f), UiHelper.COL_OUTLINE, 16));
+        seg.setPadding(dp(4), dp(4), dp(4), dp(4));
+        for (int fps : FpsApplier.detectSupportedFps(this)) {
+            TextView s = UiHelper.text(this, fps + " Hz", 14, UiHelper.COL_MUTED, UiHelper.TF_BOLD);
+            s.setGravity(Gravity.CENTER);
+            s.setTag(fps);
+            s.setOnClickListener(v -> {
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
+                startTest(fps);
+            });
+            seg.addView(s, new LinearLayout.LayoutParams(0, dp(40), 1f));
+            testSegs.add(s);
+        }
+        card.addView(seg, UiHelper.matchWrap(this, 0));
+        root.addView(card);
+
+        // Motion preview
+        LinearLayout motion = UiHelper.card(this);
+        motion.addView(UiHelper.overline(this, getString(R.string.tester_motion), UiHelper.COL_DIM));
+        motionBar = new MotionBarView(this);
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(30));
+        mp.topMargin = dp(12);
+        motion.addView(motionBar, mp);
+        root.addView(motion);
+
+        // Stats grid
+        LinearLayout grid1 = new LinearLayout(this);
+        grid1.setLayoutParams(UiHelper.matchWrap(this, 12));
+        statDisplay = stat(grid1, getString(R.string.stat_display), "--", true);
+        statTarget = stat(grid1, getString(R.string.stat_testing), getString(R.string.hz_value, testFps), false);
+        root.addView(grid1);
+        LinearLayout grid2 = new LinearLayout(this);
+        grid2.setLayoutParams(UiHelper.matchWrap(this, 12));
+        stat(grid2, getString(R.string.stat_panel), panelKnown ? getString(R.string.hz_value, maxHz) : getString(R.string.missing), true);
+        boolean pk = FpsApplier.isPowerKeeperInstalled(this);
+        TextView pkv = stat(grid2, getString(R.string.stat_pk), getString(pk ? R.string.found : R.string.missing), false);
+        pkv.setTextColor(pk ? UiHelper.COL_TEAL : UiHelper.COL_WARN);
+        root.addView(grid2);
+
+        // Actions
+        applyBtn = UiHelper.button(this, getString(R.string.tester_reapply, FpsApplier.getTargetFps(this)),
+            R.drawable.ui_refresh, true, v -> {
+                FpsApplier.ApplyResult res = FpsApplier.apply120Hz(this, FpsApplier.loadPackages(this));
+                startTest(testFps);
+                Toast.makeText(this, getString(R.string.btn_sent, res.fps, res.count), Toast.LENGTH_SHORT).show();
+            });
+        ((LinearLayout.LayoutParams) applyBtn.getLayoutParams()).topMargin = dp(18);
+        root.addView(applyBtn);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setLayoutParams(UiHelper.matchWrap(this, 10));
+        TextView copy = UiHelper.button(this, getString(R.string.tester_copy), R.drawable.ui_copy, false, v -> copyReport());
+        actions.addView(copy, new LinearLayout.LayoutParams(0, dp(52), 1f));
+        root.addView(actions);
+
+        TextView note = UiHelper.text(this,
+            getString(R.string.tester_note),
+            12, UiHelper.COL_DIM, UiHelper.TF_REGULAR);
+        note.setLineSpacing(dp(3), 1f);
+        note.setPadding(dp(6), dp(16), dp(6), 0);
+        root.addView(note);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(UiHelper.COL_BG);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(root);
+        UiHelper.applyNotchSafePadding(this, scroll, 16, 12, 24);
+        setContentView(scroll);
+    }
+
+    private TextView stat(LinearLayout parent, String label, String value, boolean first) {
+        LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.setBackground(UiHelper.pillBg(this, UiHelper.COL_SURFACE, UiHelper.COL_OUTLINE, 20));
+        t.setPadding(dp(16), dp(14), dp(16), dp(14));
+        t.addView(UiHelper.overline(this, label, UiHelper.COL_DIM));
+        TextView v = UiHelper.text(this, value, 20, UiHelper.COL_TEXT, UiHelper.TF_BOLD);
+        v.setPadding(0, dp(8), 0, 0);
+        t.addView(v);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        if (first) lp.rightMargin = dp(6); else lp.leftMargin = dp(6);
+        parent.addView(t, lp);
+        return v;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        running = true;
+        windowStartNs = 0L;
+        frameCount = 0;
+        sampleCount = 0;
+        Choreographer.getInstance().postFrameCallback(this);
+        startTest(testFps);
+    }
+
+    /**
+     * Points the override at this app itself before measuring. PowerKeeper only lifts the cap for
+     * packages in mPrivGames, so without this the tester could read 60 FPS on a device that works.
+     * Also asks for the matching display mode on this window.
+     */
+    private void startTest(int fps) {
+        testFps = fps;
+        FpsApplier.applyTargetFps(this, java.util.Collections.singleton(getPackageName()), fps);
+        try {
+            Display d = getWindowManager().getDefaultDisplay();
+            Display.Mode cur = d.getMode();
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            for (Display.Mode m : d.getSupportedModes()) {
+                if (m.getPhysicalWidth() == cur.getPhysicalWidth()
+                    && m.getPhysicalHeight() == cur.getPhysicalHeight()
+                    && Math.round(m.getRefreshRate()) == fps) {
+                    lp.preferredDisplayModeId = m.getModeId();
+                }
+            }
+            lp.preferredRefreshRate = fps;
+            getWindow().setAttributes(lp);
+        } catch (Exception ignored) {
+        }
+        for (TextView s : testSegs) {
+            boolean on = (Integer) s.getTag() == fps;
+            s.setTextColor(on ? UiHelper.COL_ON_PRIMARY : UiHelper.COL_MUTED);
+            s.setBackground(on ? UiHelper.gradientBg(this, 12, UiHelper.COL_PRIMARY, UiHelper.COL_ACCENT2)
+                : UiHelper.ripple(this, null, 12));
+        }
+        if (statTarget != null) statTarget.setText(getString(R.string.hz_value, fps));
+        windowStartNs = 0L;
+        frameCount = 0;
+        sampleCount = -1; // drop the first window while the display mode switches
+        UiHelper.setChip(this, verdictChip, getString(R.string.tester_measuring_at, fps), UiHelper.COL_PRIMARY);
+        verdictText.setText(getString(R.string.tester_sent_self, fps));
+    }
+
+    @Override
+    protected void onPause() {
+        running = false;
+        Choreographer.getInstance().removeFrameCallback(this);
+        super.onPause();
+    }
+
+    @Override
+    public void doFrame(long frameTimeNanos) {
+        if (!running) return;
+        motionBar.step(frameTimeNanos);
+        if (windowStartNs == 0L) windowStartNs = frameTimeNanos;
+        frameCount++;
+        long elapsedNs = frameTimeNanos - windowStartNs;
+        if (elapsedNs >= 500_000_000L) {
+            measuredFps = (frameCount * 1_000_000_000f) / elapsedNs;
+            windowStartNs = frameTimeNanos;
+            frameCount = 0;
+            sampleCount++;
+            updateReadouts();
+        }
+        Choreographer.getInstance().postFrameCallback(this);
+    }
+
+    private void updateReadouts() {
+        Display d = getWindowManager().getDefaultDisplay();
+        displayHz = d != null ? d.getRefreshRate() : 0f;
+        int expected = Math.min(testFps, maxHz);
+        if (sampleCount <= 0) {
+            gauge.setValue(measuredFps);
+            return;
+        }
+        boolean pkOk = FpsApplier.isPowerKeeperInstalled(this);
+        boolean high = measuredFps >= expected - 6f;
+
+        gauge.setValue(measuredFps);
+        statDisplay.setText(getString(R.string.hz_value, Math.round(displayHz)));
+
+        if (!pkOk) {
+            UiHelper.setChip(this, verdictChip, getString(R.string.v_not_supported), UiHelper.COL_WARN);
+            verdictText.setText(getString(R.string.v_not_supported_body));
+        } else if (expected <= 60) {
+            UiHelper.setChip(this, verdictChip, getString(R.string.v_testing60), UiHelper.COL_PRIMARY);
+            verdictText.setText(getString(R.string.v_testing60_body));
+        } else if (high) {
+            UiHelper.setChip(this, verdictChip, getString(R.string.v_works, expected), UiHelper.COL_TEAL);
+            verdictText.setText(getString(R.string.v_works_body, Math.round(measuredFps), expected));
+        } else if (sampleCount >= 3) {
+            UiHelper.setChip(this, verdictChip, getString(R.string.v_clamped, Math.round(measuredFps)), UiHelper.COL_ERROR);
+            verdictText.setText(getString(R.string.v_clamped_body, Math.round(displayHz), expected)
+                + "\n\n" + getString(R.string.v_clamped_refresh));
+        }
+    }
+
+    private String buildReportText() {
+        String pk = FpsApplier.isPowerKeeperInstalled(this) ? "OK" : "Missing";
+        return "Unlock FPS Diagnostic Report\n" + FpsApplier.deviceReport(this) + "\n"
+            + "Tested at: " + testFps + "Hz | "
+            + String.format(java.util.Locale.US, "Display Mode: %.1f Hz | Measured: %.1f FPS", displayHz, measuredFps);
+    }
+
+    private void copyReport() {
+        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (cm != null) {
+            cm.setPrimaryClip(ClipData.newPlainText("Unlock FPS Report", buildReportText()));
+            Toast.makeText(this, getString(R.string.copied), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private int dp(float v) {
+        return UiHelper.dp(this, v);
+    }
+}
