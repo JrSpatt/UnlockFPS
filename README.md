@@ -4,7 +4,7 @@ Xiaomi / Redmi / POCO (HyperOS, MIUI) telefonlarda oyunların yenileme hızı s�
 Paket adı: `com.spatt.unlockfps` · sürüm: `1.0` (versionCode 1)
 
 ## GitHub bağlantıları
-Hepsi `src/com/spatt/unlockfps/Config.java` içinde. Varsayılan repo: `JrSpatt/UnlockFPS` (public olmalı). Farklı ad kullanırsan sadece `REPO` satırını değiştir.
+Hepsi `src/com/spatt/unlockfps/Config.java` içinde. Varsayılan repo: `JrSpatt/UnlockFPS`. Farklı ad kullanırsan sadece `REPO` satırını değiştir.
 
 | Alan | Ne yapar |
 |---|---|
