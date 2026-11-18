@@ -195,7 +195,11 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
         UiHelper.setupDarkBars(this);
         maxHz = FpsApplier.getMaxSupportedFps(this);
         final boolean panelKnown = maxHz > 0;
-        if (!panelKnown) maxHz = 60; // only for drawing the gauge; nothing is sent in this case
+        if (!panelKnown) {
+            Toast.makeText(this, R.string.panel_unknown, Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -265,11 +269,9 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
         root.addView(grid2);
 
         // Actions
-        applyBtn = UiHelper.button(this, getString(R.string.tester_reapply, testFps),
+        applyBtn = UiHelper.button(this, getString(R.string.tester_reapply, FpsApplier.getTargetFps(this)),
             R.drawable.ui_refresh, true, v -> {
-                // Only this screen's own package; never the general profile or Beast mode.
                 startTest(testFps);
-                Toast.makeText(this, getString(R.string.tester_sent_self, testFps), Toast.LENGTH_SHORT).show();
             });
         ((LinearLayout.LayoutParams) applyBtn.getLayoutParams()).topMargin = dp(18);
         root.addView(applyBtn);
@@ -313,6 +315,7 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
     @Override
     protected void onResume() {
         super.onResume();
+        if (isFinishing()) return;
         running = true;
         windowStartNs = 0L;
         frameCount = 0;
@@ -328,7 +331,6 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
      */
     private void startTest(int fps) {
         testFps = fps;
-        if (applyBtn != null) applyBtn.setText(getString(R.string.tester_reapply, fps));
         FpsApplier.applyTargetFps(this, java.util.Collections.singleton(getPackageName()), fps);
         try {
             Display d = getWindowManager().getDefaultDisplay();

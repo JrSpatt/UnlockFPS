@@ -79,7 +79,17 @@ public class AboutActivity extends Activity {
         links.addView(UiHelper.divider(this, 58));
         links.addView(UiHelper.row(this, R.drawable.ui_info, UiHelper.COL_WARN,
             getString(R.string.about_game_list), null, null,
-            v -> UiHelper.openUrl(this, Config.GAME_LIST_URL)));
+            v -> showGameList()));
+        links.addView(UiHelper.divider(this, 58));
+        links.addView(UiHelper.row(this, R.drawable.ui_refresh, UiHelper.COL_MUTED,
+            getString(R.string.reset_defaults), getString(R.string.reset_instructions), null, v -> {
+                try {
+                    startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", FpsApplier.POWERKEEPER_PKG, null)));
+                } catch (android.content.ActivityNotFoundException | SecurityException e) {
+                    android.widget.Toast.makeText(this, R.string.reset_unavailable, android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }));
         root.addView(links);
 
         // Setup
@@ -115,6 +125,29 @@ public class AboutActivity extends Activity {
         scroll.addView(root);
         UiHelper.applyNotchSafePadding(this, scroll, 16, 12, 28);
         setContentView(scroll);
+    }
+
+    private void showGameList() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16), dp(12), dp(16), dp(12));
+        panel.setBackground(UiHelper.pillBg(this, UiHelper.COL_LOG_BG, UiHelper.COL_OUTLINE, 14));
+        for (GameCaps.Info game : GameCaps.catalog(this)) {
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(7), 0, dp(7));
+            TextView name = UiHelper.text(this, game.name, 13, UiHelper.COL_TEXT, android.graphics.Typeface.MONOSPACE);
+            row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView cap = UiHelper.text(this, game.cap + " FPS", 12, UiHelper.fpsColor(game.cap), android.graphics.Typeface.MONOSPACE);
+            cap.setPadding(dp(8), 0, 0, 0);
+            row.addView(cap);
+            panel.addView(row);
+        }
+        android.app.Dialog dialog = UiHelper.sheet(this, panel);
+        dialog.setTitle(R.string.about_game_list);
+        dialog.show();
+        int height = Math.min(dp(390), getResources().getDisplayMetrics().heightPixels / 2);
+        dialog.getWindow().setLayout(-1, height);
     }
 
     /** Pins the widget, or explains HyperOS's "Home screen shortcuts" permission first. */

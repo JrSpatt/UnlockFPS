@@ -11,7 +11,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/** Three-page first-launch guide: what it does, game limits, keep it running. */
+/** Two-page first-launch guide: game settings and background setup. */
 public class OnboardingActivity extends Activity {
     @Override
     protected void attachBaseContext(android.content.Context base) {
@@ -64,7 +64,7 @@ public class OnboardingActivity extends Activity {
         root.addView(dots, UiHelper.matchWrap(this, 0));
 
         nextBtn = UiHelper.button(this, "", 0, true, v -> {
-            if (page < 2) {
+            if (page < 1) {
                 page++;
                 render();
             } else {
@@ -102,10 +102,10 @@ public class OnboardingActivity extends Activity {
         body.removeAllViews();
         batteryBtn = null;
         refreshBtn = null;
-        int[] titles = {R.string.ob1_title, R.string.ob2_title, R.string.ob3_title};
-        int[] bodies = {R.string.ob1_body, R.string.ob2_body, R.string.ob3_body};
-        int[] icons = {R.drawable.ui_zap, R.drawable.ui_gamepad, R.drawable.ui_settings};
-        int[] colors = {UiHelper.COL_PRIMARY, UiHelper.COL_WARN, UiHelper.COL_TEAL};
+        int[] titles = {R.string.ob2_title, R.string.ob3_title};
+        int[] bodies = {R.string.ob2_body, R.string.ob3_body};
+        int[] icons = {R.drawable.ui_gamepad, R.drawable.ui_settings};
+        int[] colors = {UiHelper.COL_WARN, UiHelper.COL_TEAL};
 
         FrameLayout badge = new FrameLayout(this);
         badge.setBackground(UiHelper.pillBg(this, UiHelper.alpha(colors[page], 0.12f),
@@ -122,14 +122,14 @@ public class OnboardingActivity extends Activity {
         b.setLineSpacing(dp(5), 1f);
         body.addView(b);
 
-        if (page == 1) {
+        if (page == 0) {
             LinearLayout tags = UiHelper.card(this);
             tags.setLayoutParams(UiHelper.matchWrap(this, 22));
             tags.addView(tagRow(R.string.tag_120, UiHelper.COL_TEAL, R.string.ob2_tag120));
             tags.addView(tagRow(R.string.tag_90, UiHelper.COL_PRIMARY, R.string.ob2_tag90));
             tags.addView(tagRow(R.string.tag_60, UiHelper.COL_WARN, R.string.ob2_tag60));
             body.addView(tags);
-        } else if (page == 2) {
+        } else if (page == 1) {
             batteryBtn = UiHelper.button(this, "", R.drawable.ui_zap, false,
                 v -> UiHelper.requestBatteryExemption(this));
             ((LinearLayout.LayoutParams) batteryBtn.getLayoutParams()).topMargin = dp(24);
@@ -161,7 +161,7 @@ public class OnboardingActivity extends Activity {
         body.animate().alpha(1f).translationX(0).setDuration(220).start();
 
         dots.removeAllViews();
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 2; i++) {
             View d = new View(this);
             boolean on = i == page;
             d.setBackground(UiHelper.pillBg(this, on ? UiHelper.COL_PRIMARY : UiHelper.COL_OUTLINE, 0, 99));
@@ -170,8 +170,8 @@ public class OnboardingActivity extends Activity {
             lp.rightMargin = dp(4);
             dots.addView(d, lp);
         }
-        nextBtn.setText(getString(page < 2 ? R.string.ob_next : R.string.ob_done));
-        skipBtn.setVisibility(page < 2 ? View.VISIBLE : View.INVISIBLE);
+        nextBtn.setText(getString(page < 1 ? R.string.ob_next : R.string.ob_done));
+        skipBtn.setVisibility(page < 1 ? View.VISIBLE : View.INVISIBLE);
     }
 
     private View tagRow(int tagRes, int color, int descRes) {

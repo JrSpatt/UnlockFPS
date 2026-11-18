@@ -8,10 +8,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.widget.RemoteViews;
 
-/** Home-screen widget: target rate, on/off and a one-tap switch to the next rate. */
+/** Home-screen widget: last applied target and one-tap reapply. */
 public class UnlockWidget extends AppWidgetProvider {
-    private static final String ACTION_TOGGLE = "com.spatt.unlockfps.widget.TOGGLE";
-    private static final String ACTION_NEXT_RATE = "com.spatt.unlockfps.widget.NEXT_RATE";
+    private static final String ACTION_REAPPLY = "com.spatt.unlockfps.widget.REAPPLY";
 
     /** Redraws every placed widget. Safe to call from anywhere state changes. */
     public static void updateAll(Context ctx) {
@@ -65,56 +64,28 @@ public class UnlockWidget extends AppWidgetProvider {
     @Override
     public void onReceive(Context ctx, Intent intent) {
         super.onReceive(ctx, intent);
-        String action = intent.getAction();
-        if (ACTION_TOGGLE.equals(action)) {
-            boolean next = !FpsApplier.isAutoEnabled(ctx);
-            FpsApplier.setAutoEnabled(ctx, next);
-            Intent svc = new Intent(ctx, Auto120Service.class);
-            if (next) {
-                ctx.startForegroundService(svc);
-                FpsApplier.apply120Hz(ctx, FpsApplier.syncInstalledGames(ctx));
-            } else {
-                ctx.stopService(svc);
-            }
-        } else if (ACTION_NEXT_RATE.equals(action)) {
-            int next = nextRate(ctx);
-            if (next <= 0) return; // panel not detected
-            FpsApplier.setTargetFps(ctx, next);
-            FpsApplier.apply120Hz(ctx, FpsApplier.loadPackages(ctx));
-            if (FpsApplier.isAutoEnabled(ctx)) ctx.startForegroundService(new Intent(ctx, Auto120Service.class));
-        } else {
-            return;
-        }
-        UnlockTileService.requestTileSync(ctx);
+        if (!ACTION_REAPPLY.equals(intent.getAction())) return;
+        Context local = Lang.wrap(ctx);
+        FpsApplier.ApplyResult result = FpsApplier.reapply(ctx);
+        int message;
+        if (!FpsApplier.hasAppliedProfile(ctx)) message = R.string.apply_first;
+        else if (!result.powerKeeperFound) message = R.string.pk_not_found_long;
+        else if (!FpsApplier.panelDetected(ctx)) message = R.string.panel_unknown;
+        else if (result.count == 0) message = R.string.widget_no_apps;
+        else message = R.string.widget_sent;
+        android.widget.Toast.makeText(local, local.getString(message), android.widget.Toast.LENGTH_SHORT).show();
         updateAll(ctx);
-    }
-
-    private static int nextRate(Context ctx) {
-        int[] rates = FpsApplier.detectSupportedFps(ctx);
-        if (rates.length == 0) return 0;
-        int cur = FpsApplier.getTargetFps(ctx);
-        for (int r : rates) if (r > cur) return r;
-        return rates[0];
     }
 
     private static RemoteViews build(Context base) {
         Context ctx = Lang.wrap(base);
         RemoteViews v = new RemoteViews(ctx.getPackageName(), R.layout.widget_unlock);
-        boolean on = FpsApplier.isAutoEnabled(ctx);
-        int fps = FpsApplier.effectiveFps(ctx);
-        int apps = FpsApplier.loadPackages(ctx).size();
-
-        v.setTextViewText(R.id.widget_hz, fps > 0 ? String.valueOf(fps) : "—");
-        v.setTextColor(R.id.widget_hz, fps > 0 ? UiHelper.fpsColor(fps) : UiHelper.COL_DIM);
-        v.setTextViewText(R.id.widget_status, "● " + ctx.getString(on ? R.string.widget_status_on : R.string.widget_status_off));
-        v.setTextColor(R.id.widget_status, on ? UiHelper.COL_TEAL : UiHelper.COL_DIM);
-        v.setTextViewText(R.id.widget_apps, ctx.getResources().getQuantityString(R.plurals.apps_count, apps, apps));
-        v.setTextViewText(R.id.widget_toggle, ctx.getString(on ? R.string.widget_turn_off : R.string.widget_turn_on));
-        int nextHz = nextRate(ctx);
-        v.setTextViewText(R.id.widget_rate, nextHz > 0 ? "→ " + nextHz + "Hz" : "—");
-
-        v.setOnClickPendingIntent(R.id.widget_toggle, broadcast(ctx, ACTION_TOGGLE, 1));
-        v.setOnClickPendingIntent(R.id.widget_rate, broadcast(ctx, ACTION_NEXT_RATE, 2));
+        int fps = FpsApplier.hasAppliedProfile(ctx) ? FpsApplier.effectiveFps(ctx) : 0;
+        v.setTextViewText(R.id.widget_target, ctx.getString(R.string.widget_target));
+        v.setTextViewText(R.id.widget_hz, fps > 0 ? ctx.getString(R.string.widget_rate_value, fps) : "—");
+        v.setTextColor(R.id.widget_hz, fps > 0 ? UiHelper.fpsColor(fps) : 0xffaeb7c2);
+        v.setContentDescription(R.id.widget_reapply, ctx.getString(R.string.widget_reapply));
+        v.setOnClickPendingIntent(R.id.widget_reapply, broadcast(ctx, ACTION_REAPPLY, 4));
         v.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(ctx, 3,
             new Intent(ctx, MainActivity.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         return v;

@@ -22,7 +22,23 @@ public class Auto120Service extends Service {
 
     /** In Beast mode the long app list is re-sent every Nth tick only (N x 15 s) to stay light. */
     private static final int BEAST_EVERY_N_TICKS = 4;
-    private int tick = 0;
+    private int tick = 1;
+    private static Auto120Service running;
+
+    static void ensureRunning(Context ctx) {
+        if (running != null || !FpsApplier.hasAppliedProfile(ctx)) return;
+        try {
+            ctx.startForegroundService(new Intent(ctx, Auto120Service.class));
+        } catch (IllegalStateException | SecurityException denied) {
+            android.util.Log.w("UnlockFPS", "Automatic reapply service could not start", denied);
+        }
+    }
+
+    static void refreshNotification(Context ctx) {
+        if (running == null) return;
+        NotificationManager nm = ctx.getSystemService(NotificationManager.class);
+        if (nm != null) nm.notify(NOTIF_ID, running.buildNotification());
+    }
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -41,7 +57,7 @@ public class Auto120Service extends Service {
             boolean due = !beast || tick % BEAST_EVERY_N_TICKS == 0;
             tick++;
             if (due && (powerManager == null || powerManager.isInteractive())) {
-                FpsApplier.apply120Hz(Auto120Service.this, FpsApplier.loadPackages(Auto120Service.this));
+                FpsApplier.reapply(Auto120Service.this);
             }
             handler.postDelayed(this, REFRESH_INTERVAL_MS);
         }
@@ -50,6 +66,7 @@ public class Auto120Service extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        running = this;
         handler = new Handler(Looper.getMainLooper());
         powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         createChannel();
@@ -60,17 +77,17 @@ public class Auto120Service extends Service {
             public void onReceive(Context context, Intent intent) {
                 if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
                     FpsApplier.markServiceAlive(context);
-                    FpsApplier.apply120Hz(context, FpsApplier.loadPackages(context));
+                    FpsApplier.reapply(context);
                 }
             }
         };
         registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_ON));
-        handler.post(periodicApply);
+        handler.postDelayed(periodicApply, REFRESH_INTERVAL_MS);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        FpsApplier.apply120Hz(this, FpsApplier.syncInstalledGames(this));
+        if (intent == null && FpsApplier.isAutoEnabled(this)) FpsApplier.reapply(this);
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm != null) {
             nm.notify(NOTIF_ID, buildNotification());
@@ -86,6 +103,7 @@ public class Auto120Service extends Service {
         if (screenReceiver != null) {
             unregisterReceiver(screenReceiver);
         }
+        running = null;
         super.onDestroy();
     }
 

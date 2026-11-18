@@ -65,6 +65,14 @@ final class GameCaps {
         init(ctx);
     }
 
+    static java.util.List<Info> catalog(Context ctx) {
+        init(ctx);
+        // Each game may have several regional packages pointing to the same entry.
+        java.util.List<Info> games = new java.util.ArrayList<>(new java.util.HashSet<>(db.values()));
+        games.sort((a, b) -> a.name.compareToIgnoreCase(b.name));
+        return games;
+    }
+
     static int version() {
         return version;
     }

@@ -20,19 +20,20 @@ import java.util.TreeSet;
 /** Sends Joyose-compatible refresh-rate override broadcasts to PowerKeeper and auto-detects games. */
 public final class FpsApplier {
     private static final String TAG = "UnlockFPS";
-    private static final String PREFS = "unlock_fps_prefs";
-    private static final String KEY_PACKAGES = "packages";
-    private static final String KEY_IGNORED = "ignored_games";
+    static final String KEY_APPLIED = "profile_applied";
+    static final String PREFS = "unlock_fps_prefs";
+    static final String KEY_PACKAGES = "packages";
+    static final String KEY_IGNORED = "ignored_games";
     private static final String KEY_AUTO_ENABLED = "auto_enabled";
     private static final String KEY_AUTO_ADD_GAMES = "auto_add_games";
-    private static final String KEY_TARGET_FPS = "target_fps";
-    private static final String KEY_GAME_FPS_PREFIX = "game_fps_";
+    static final String KEY_TARGET_FPS = "target_fps";
+    static final String KEY_GAME_FPS_PREFIX = "game_fps_";
     private static final String KEY_SERVICE_BEAT = "service_heartbeat_ms";
-    private static final String KEY_BEAST = "beast_enabled";
+    static final String KEY_BEAST = "beast_enabled";
     private static final String KEY_BEAST_WARN_HIDDEN = "beast_warn_hidden";
     private static final String KEY_ONBOARDED = "onboarded_v1";
     private static final String ACTION_OVERRIDE = "com.xiaomi.joyose.OVERRIDE_GAME_FRESHRATE";
-    private static final String POWERKEEPER_PKG = "com.miui.powerkeeper";
+    static final String POWERKEEPER_PKG = "com.miui.powerkeeper";
 
     public static final int[] SUPPORTED_FPS = {60, 90, 120, 144};
 
@@ -53,30 +54,10 @@ public final class FpsApplier {
         return new LinkedHashSet<>(saved);
     }
 
-    public static void savePackages(Context ctx, Set<String> pkgs) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putStringSet(KEY_PACKAGES, new LinkedHashSet<>(pkgs))
-            .apply();
-    }
-
     public static Set<String> loadIgnoredPackages(Context ctx) {
         SharedPreferences sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         Set<String> ignored = sp.getStringSet(KEY_IGNORED, null);
         return ignored == null ? new LinkedHashSet<>() : new LinkedHashSet<>(ignored);
-    }
-
-    public static void setPackageIgnored(Context ctx, String pkg, boolean ignored) {
-        Set<String> set = loadIgnoredPackages(ctx);
-        if (ignored) {
-            set.add(pkg);
-        } else {
-            set.remove(pkg);
-        }
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putStringSet(KEY_IGNORED, set)
-            .apply();
     }
 
     public static boolean isAutoEnabled(Context ctx) {
@@ -169,63 +150,15 @@ public final class FpsApplier {
     public static int getTargetFps(Context ctx) {
         SharedPreferences sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         int saved = sp.getInt(KEY_TARGET_FPS, -1);
-        if (saved > 0) {
-            return snapToPanel(ctx, saved);
+        if (Arrays.binarySearch(readPanelRates(ctx), saved) >= 0) {
+            return saved;
         }
         return getMaxSupportedFps(ctx);
-    }
-
-    /**
-     * Makes a saved rate valid for the panel as it is NOW: the same rate if the panel lists it, otherwise the
-     * highest listed rate below it (or the lowest listed one). Returns 0 when the panel cannot be read.
-     */
-    public static int snapToPanel(Context ctx, int rate) {
-        int[] rates = readPanelRates(ctx);
-        if (rates.length == 0) return 0;
-        int best = rates[0];
-        for (int r : rates) {
-            if (r == rate) return r;
-            if (r < rate) best = r;
-        }
-        return best;
-    }
-
-    public static void setTargetFps(Context ctx, int fps) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putInt(KEY_TARGET_FPS, fps)
-            .apply();
     }
 
     public static boolean isGameApp(ApplicationInfo ai) {
         return (ai.category == ApplicationInfo.CATEGORY_GAME)
             || ((ai.flags & ApplicationInfo.FLAG_IS_GAME) != 0);
-    }
-
-    /** Auto-adds all installed games (unless manually unchecked by user) when enabled. */
-    public static Set<String> syncInstalledGames(Context ctx) {
-        Set<String> pkgs = loadPackages(ctx);
-        if (!isAutoAddGamesEnabled(ctx)) {
-            return pkgs;
-        }
-        Set<String> ignored = loadIgnoredPackages(ctx);
-        PackageManager pm = ctx.getPackageManager();
-        List<ApplicationInfo> apps = pm.getInstalledApplications(0);
-        boolean changed = false;
-        String selfPkg = ctx.getPackageName();
-        for (ApplicationInfo ai : apps) {
-            if (selfPkg.equals(ai.packageName)) continue;
-            if (pm.getLaunchIntentForPackage(ai.packageName) == null) continue;
-            if (isGameApp(ai) && !ignored.contains(ai.packageName)) {
-                if (pkgs.add(ai.packageName)) {
-                    changed = true;
-                }
-            }
-        }
-        if (changed) {
-            savePackages(ctx, pkgs);
-        }
-        return pkgs;
     }
 
     public static final class ApplyResult {
@@ -251,7 +184,20 @@ public final class FpsApplier {
         }
     }
 
-    public static ApplyResult apply120Hz(Context ctx, Set<String> pkgs) {
+    // Existing v1 installs already used the stored profile. A fresh install waits for Apply.
+    static boolean hasAppliedProfile(Context ctx) {
+        SharedPreferences sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (!sp.contains(KEY_APPLIED)) {
+            boolean existing = sp.contains(KEY_ONBOARDED) || sp.contains(KEY_TARGET_FPS)
+                || sp.contains(KEY_PACKAGES) || sp.contains(KEY_BEAST) || sp.contains(KEY_SERVICE_BEAT);
+            sp.edit().putBoolean(KEY_APPLIED, existing).apply();
+        }
+        return sp.getBoolean(KEY_APPLIED, false);
+    }
+
+    public static ApplyResult reapply(Context ctx) {
+        if (!hasAppliedProfile(ctx)) return new ApplyResult(0, 0, isPowerKeeperInstalled(ctx), Collections.emptyList());
+        Set<String> pkgs = loadPackages(ctx);
         return applyInternal(ctx, pkgs, getTargetFps(ctx), true);
     }
 
@@ -269,11 +215,11 @@ public final class FpsApplier {
         return (isBeastEnabled(ctx) && verified > 0) ? verified : getTargetFps(ctx);
     }
 
-    private static ApplyResult applyInternal(Context ctx, Set<String> pkgs, int requestedFps, boolean allowBeast) {
+    private static ApplyResult applyInternal(Context ctx, Set<String> pkgs, int fps, boolean allowBeast) {
         boolean pkFound = isPowerKeeperInstalled(ctx);
-        int fps = snapToPanel(ctx, requestedFps); // never send a rate the panel does not list
-        int maxFps = getVerifiedMaxFps(ctx);
-        if (maxFps <= 0) {
+        int[] modes = readPanelRates(ctx);
+        int maxFps = modes.length == 0 ? 0 : modes[modes.length - 1];
+        if (!pkFound || maxFps <= 0) {
             // Panel not detected: never send an unverified rate.
             Log.w(TAG, "panel modes unreadable, nothing sent");
             return new ApplyResult(0, fps, pkFound, new ArrayList<String>());
@@ -286,14 +232,19 @@ public final class FpsApplier {
         for (String pkg : all) {
             String trimmed = pkg.trim();
             if (trimmed.isEmpty()) continue;
-            int own = allowBeast ? snapToPanel(ctx, getGameFps(ctx, trimmed)) : 0;
-            int rate = beast ? maxFps : (own > 0 ? own : fps);
+            int own = getGameFps(ctx, trimmed);
+            int rate = beast ? maxFps : (allowBeast && Arrays.binarySearch(modes, own) >= 0 ? own : fps);
+            if (Arrays.binarySearch(modes, rate) < 0) continue;
             Intent intent = new Intent(ACTION_OVERRIDE);
             intent.putExtra("override_pkg_name", trimmed);
             intent.putExtra("override_freshrate", rate);
             intent.setPackage(POWERKEEPER_PKG);
-            ctx.sendBroadcast(intent);
-            sent.add(trimmed);
+            try {
+                ctx.sendBroadcast(intent);
+                sent.add(trimmed);
+            } catch (SecurityException denied) {
+                Log.w(TAG, "PowerKeeper broadcast denied", denied);
+            }
         }
         int shown = beast ? maxFps : fps;
         Log.i(TAG, "applyTargetFps: fps=" + shown + " beast=" + beast + " sent=" + sent.size()
@@ -309,10 +260,6 @@ public final class FpsApplier {
 
     public static boolean isBeastEnabled(Context ctx) {
         return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_BEAST, false);
-    }
-
-    public static void setBeastEnabled(Context ctx, boolean on) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_BEAST, on).apply();
     }
 
     /** True once the user ticked "Don't show again" on the Beast mode warning. */
@@ -361,13 +308,6 @@ public final class FpsApplier {
     /** Rate chosen for one game, or 0 to follow the global target. */
     public static int getGameFps(Context ctx, String pkg) {
         return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_GAME_FPS_PREFIX + pkg, 0);
-    }
-
-    public static void setGameFps(Context ctx, String pkg, int fps) {
-        SharedPreferences.Editor e = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
-        if (fps > 0) e.putInt(KEY_GAME_FPS_PREFIX + pkg, fps);
-        else e.remove(KEY_GAME_FPS_PREFIX + pkg);
-        e.apply();
     }
 
     // ---------------------------------------------------------------- health

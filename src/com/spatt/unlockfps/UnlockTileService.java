@@ -38,8 +38,8 @@ public class UnlockTileService extends TileService {
         FpsApplier.setAutoEnabled(this, next);
         Intent svc = new Intent(this, Auto120Service.class);
         if (next) {
-            startForegroundService(svc);
-            FpsApplier.apply120Hz(this, FpsApplier.syncInstalledGames(this));
+            Auto120Service.ensureRunning(this);
+            FpsApplier.reapply(this);
         } else {
             stopService(svc);
         }
@@ -56,7 +56,8 @@ public class UnlockTileService extends TileService {
         tile.setState(active ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         tile.setLabel(getString(R.string.app_name));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.setSubtitle(fps <= 0 ? getString(R.string.panel_unknown)
+            tile.setSubtitle(!FpsApplier.hasAppliedProfile(this) ? getString(R.string.apply_first)
+                : fps <= 0 ? getString(R.string.panel_unknown)
                 : active ? getString(R.string.tile_sub, fps, pkgs.size()) : getString(R.string.tile_off));
         }
         tile.updateTile();

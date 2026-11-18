@@ -3,13 +3,12 @@ package com.spatt.unlockfps;
 import android.content.Context;
 import android.graphics.Color;
 
-/** Four colour themes. The choice is saved; every screen calls apply() before it builds its views. */
+/** Three colour themes. The choice is saved; every screen calls apply() before it builds its views. */
 final class Themes {
     static final String OLED = "oled";
-    static final String BLACK = "black";
     static final String RUBY = "ruby";
     static final String GOLD = "gold";
-    static final String[] ALL = {OLED, BLACK, RUBY, GOLD};
+    static final String[] ALL = {OLED, RUBY, GOLD};
 
     private static final String PREFS = "unlock_fps_prefs";
     private static final String KEY = "theme";
@@ -17,9 +16,9 @@ final class Themes {
     private Themes() {}
 
     static String get(Context ctx) {
-        String saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, BLACK);
+        String saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, OLED);
         for (String t : ALL) if (t.equals(saved)) return saved;
-        return BLACK;
+        return OLED;
     }
 
     static void set(Context ctx, String id) {
@@ -51,7 +50,7 @@ final class Themes {
             case OLED: return R.string.theme_oled;
             case RUBY: return R.string.theme_ruby;
             case GOLD: return R.string.theme_gold;
-            default: return R.string.theme_black;
+            default: return R.string.theme_oled;
         }
     }
 
@@ -62,13 +61,6 @@ final class Themes {
                     Color.parseColor("#38BDF8"), Color.parseColor("#818CF8"), Color.parseColor("#6366F1"), Color.parseColor("#2DD4BF"), Color.parseColor("#04121C"),
                     Color.parseColor("#F1F5F9"), Color.parseColor("#8A8F99"), Color.parseColor("#565B66"), Color.parseColor("#07131C"), Color.parseColor("#0D0B1C"),
                     Color.parseColor("#000000"), Color.parseColor("#141418"), Color.parseColor("#040405"), Color.parseColor("#2C2C33"));
-                break;
-            default:
-            case BLACK:
-                set(Color.parseColor("#0B0B0D"), Color.parseColor("#141416"), Color.parseColor("#1C1C1F"), Color.parseColor("#102030"), Color.parseColor("#27272C"), Color.parseColor("#1B1B1F"),
-                    Color.parseColor("#38BDF8"), Color.parseColor("#818CF8"), Color.parseColor("#6366F1"), Color.parseColor("#2DD4BF"), Color.parseColor("#04121C"),
-                    Color.parseColor("#F1F5F9"), Color.parseColor("#8E939C"), Color.parseColor("#5A5F69"), Color.parseColor("#0E1F2D"), Color.parseColor("#171630"),
-                    Color.parseColor("#08080A"), Color.parseColor("#1C1C21"), Color.parseColor("#0C0C0F"), Color.parseColor("#34343B"));
                 break;
             case RUBY:
                 set(Color.parseColor("#0D0508"), Color.parseColor("#1A0A10"), Color.parseColor("#241017"), Color.parseColor("#2C0F1A"), Color.parseColor("#3A1621"), Color.parseColor("#26101A"),

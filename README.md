@@ -3,7 +3,7 @@
 Xiaomi / Redmi / POCO (HyperOS, MIUI) telefonlarda oyunların yenileme hızı sınırını kaldıran, root gerektirmeyen uygulama.
 Paket adı: `com.spatt.unlockfps` · sürüm: `1.0` (versionCode 1)
 
-## Doldurulacak bağlantılar
+## GitHub bağlantıları
 Hepsi `src/com/spatt/unlockfps/Config.java` içinde. Varsayılan repo: `JrSpatt/UnlockFPS` (public olmalı). Farklı ad kullanırsan sadece `REPO` satırını değiştir.
 
 | Alan | Ne yapar |
@@ -26,12 +26,6 @@ Anahtar yoksa derleme durur. Elle çalıştırmada (Run workflow) geçici debug 
 
 ## Beast mode
 Hero kartında hız seçicinin yanındaki alev logosu. Açıkken tüm başlatılabilir uygulamalara (sistem dahil)
-panelin gerçekten bildirdiği en yüksek hızı gönderir. Panel modları okunamazsa Beast açılmaz.
+panelin desteklediği en yüksek hızı gönderir. Beast ve hız seçimleri yalnızca Uygula ile kaydedilen profile geçer. Beast kapatılıp profil uygulandığında diğer uygulamalara 60 Hz gönderilmez.
 
-Kapatınca hiçbir uygulamaya istek gönderilmez (eski hızı geri yükleyen bir istek yok). Beast ile yükseltilen
-uygulamalar, PowerKeeper yeniden başlayana (genelde telefon yeniden açılana) kadar yüksek hızda kalabilir.
-
-## Panel ve kayıtlı hızlar
-Kayıtlı hedef hız (ve oyun başına hız) her kullanımda panelin o anki mod listesine göre doğrulanır; listede yoksa
-en yakın düşük hıza indirilir. Panel hiç okunamazsa hiçbir hız gönderilmez ve arayüzde "Panel algılanamadı" yazar.
-FPS testi yalnızca kendi ekranının paketine istek gönderir.
+Widget (2×1), son uygulanan hedefi gösterir. Yenile düğmesi yalnızca bu profili tekrar gönderir.

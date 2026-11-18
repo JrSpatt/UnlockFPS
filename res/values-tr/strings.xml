@@ -5,17 +5,17 @@
     <!-- Home -->
     <string name="main_device_line">%1$s · Android %2$s · en çok %3$dHz</string>
     <string name="main_caption">Seçtiğin oyunlar için hedef yenileme hızı</string>
-    <string name="chip_active">Aktif</string>
+    <string name="chip_active">Otomatik açık</string>
     <string name="chip_manual">Manuel mod</string>
     <string name="chip_pk_missing">PowerKeeper yok</string>
     <plurals name="apps_count">
         <item quantity="one">%d uygulama</item>
         <item quantity="other">%d uygulama</item>
     </plurals>
-    <string name="set_bg_title">Arka plan override</string>
+    <string name="set_bg_title">Otomatik gönderim</string>
     <string name="set_bg_sub">Ekran açıkken yeniden gönderir: 15 sn\'de bir, Beast mode\'da 60 sn\'de bir</string>
     <string name="set_add_title">Oyunları otomatik ekle</string>
-    <string name="set_add_sub">Yeni kurulan oyunlar senin için eklenir</string>
+    <string name="set_add_sub">Yeni oyunları bir sonraki uygulama için seçer.</string>
     <string name="tool_tester">FPS testi</string>
     <string name="tool_tester_sub">Çalıştığını kontrol et</string>
     <string name="tool_log">Etkinlik günlüğü</string>
@@ -40,7 +40,7 @@
     <string name="pk_not_found_long">PowerKeeper bulunamadı. Bu ROM override\'ı desteklemiyor olabilir.</string>
     <string name="btn_sent">%2$d uygulamaya %1$dHz gönderildi</string>
     <string name="btn_pk_not_found">PowerKeeper bulunamadı</string>
-    <string name="btn_apply">%dHz şimdi uygula</string>
+    <string name="btn_apply">Uygula</string>
 
     <!-- Health warnings -->
     <string name="health_battery_title">Pil tasarrufu Unlock FPS\'i durdurabilir</string>
@@ -62,7 +62,7 @@
     <!-- About -->
     <string name="about_title">Hakkında</string>
     <string name="about_version">Sürüm %s</string>
-    <string name="about_desc">Xiaomi, Redmi ve POCO telefonlarda oyunlarda yüksek yenileme hızlarının kilidini açar. Seçtiğin hızı PowerKeeper\'dan ister; böylece diğer her yerde uyarlanabilir yenileme ve pil ömrü olduğu gibi kalır. Root yok, bilgisayar yok.</string>
+    <string name="about_desc">MIUI/HyperOS cihazlarda oyunlardaki hatalı 60 fps kilidini kaldırmaya yarar.</string>
     <string name="about_section_app">Uygulama</string>
     <string name="about_update">Güncellemeleri denetle</string>
     <string name="about_update_sub">Şu an v%s kullanıyorsun</string>
@@ -87,7 +87,7 @@
     <string name="found">Var</string>
     <string name="missing">Yok</string>
     <string name="hz_value">%d Hz</string>
-    <string name="tester_reapply">%d Hz ile yeniden test et</string>
+    <string name="tester_reapply">%dHz yeniden uygula</string>
     <string name="tester_copy">Raporu kopyala</string>
     <string name="tester_note">Bu ekran, sistemin Unlock FPS\'e gerçekten ilettiği kareleri ölçer. Oyunlar kendi FPS ayarıyla da sınırlıdır; oyun içi kare hızını Yüksek/Ultra veya 120 yap.</string>
     <string name="tester_measuring_at">%d Hz\'de ölçülüyor…</string>
@@ -115,11 +115,11 @@
     <string name="ob_done">Başla</string>
     <string name="ob1_title">Akıcı oyunlar, normal pil</string>
     <string name="ob1_body">HyperOS birçok oyunu 60Hz\'de sınırlar. Unlock FPS bu sınırı sadece seçtiğin oyunlar için kaldırır. Geri kalan her şey uyarlanabilir yenilemeyi korur, yani pil ömrü aynı kalır. Root yok, bilgisayar yok.</string>
-    <string name="ob2_title">Her oyunun kendi sınırı var</string>
-    <string name="ob2_body">Unlock FPS ekranın kilidini açar, ama kaç kare çizileceğine yine oyun karar verir. Bazıları 60\'ı hiç aşmaz. Bazıları 120\'yi yalnızca kendi ayarlarında sunar, çoğu zaman da sadece geliştiricinin onayladığı telefonlarda. Uygulama listesinde şu etiketlere bak:</string>
+    <string name="ob2_title">Yenileme hızını seç</string>
+    <string name="ob2_body">Yenileme hızını ve oyunlarını seçip Uygula’ya dokun. Bazı oyunlarda yüksek FPS seçeneğini oyunun grafik ayarlarından da açman gerekir.</string>
     <string name="ob2_tag120">60\'ın üstüne çıkabilir. Oyunun grafik ayarlarından aç.</string>
     <string name="ob2_tag90">90\'a kadar çıkabilir.</string>
-    <string name="ob2_tag60">Oyun 60\'ta durur. Hiçbir şey onu daha hızlı yapamaz.</string>
+    <string name="ob2_tag60">Oyun kare hızını 60 FPS ile sınırlar.</string>
     <string name="ob3_title">Çalışır kalsın</string>
     <string name="ob3_body">HyperOS arka plandaki uygulamaları sert şekilde kapatır. Uygulamadan çıktıktan sonra da Unlock FPS\'in çalışması için bu adımları yap.</string>
     <string name="ob3_battery">1. Pil tasarrufu: Kısıtlama yok</string>
@@ -129,7 +129,7 @@
     <string name="ob3_autostart_hint">Listede Unlock FPS\'i bul ve aç.</string>
 
     <!-- Widget -->
-    <string name="widget_desc">Hedef hız, aç/kapat ve tek dokunuşla hız değiştirme</string>
+    <string name="widget_desc">Son uygulanan hedefi gösterir ve tek dokunuşla yeniden gönderir.</string>
     <string name="widget_status_on">Aktif</string>
     <string name="widget_status_off">Kapalı</string>
     <string name="widget_turn_on">Aç</string>
@@ -181,4 +181,14 @@
     <string name="theme_black">Siyah</string>
     <string name="theme_ruby">Ruby</string>
     <string name="theme_gold">Gold</string>
+    <string name="reset_defaults">Varsayılana dön</string>
+    <string name="reset_instructions">Otomatik gönderimi kapat. Ardından Pil ve Performans uygulamasının bilgi ekranında “Zorla durdur”a dokun.</string>
+    <string name="reset_unavailable">Pil ve Performans uygulama bilgisi açılamadı.</string>
+    <string name="apply_changes">Değişiklikleri uygula</string>
+    <string name="apply_first">Önce Unlock FPS içinde bir profil uygula.</string>
+    <string name="widget_target">Hedef</string>
+    <string name="widget_reapply">Yeniden uygula</string>
+    <string name="widget_rate_value">%d Hz</string>
+    <string name="widget_sent">Profil gönderildi</string>
+    <string name="widget_no_apps">Seçili uygulama yok</string>
 </resources>

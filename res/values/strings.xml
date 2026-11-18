@@ -5,17 +5,17 @@
     <!-- Home -->
     <string name="main_device_line">%1$s · Android %2$s · up to %3$dHz</string>
     <string name="main_caption">Target refresh rate for your selected games</string>
-    <string name="chip_active">Active</string>
+    <string name="chip_active">Auto on</string>
     <string name="chip_manual">Manual mode</string>
     <string name="chip_pk_missing">PowerKeeper missing</string>
     <plurals name="apps_count">
         <item quantity="one">%d app</item>
         <item quantity="other">%d apps</item>
     </plurals>
-    <string name="set_bg_title">Background override</string>
+    <string name="set_bg_title">Automatic reapply</string>
     <string name="set_bg_sub">Re-sends while the screen is on: every 15 s, or every 60 s in Beast mode</string>
     <string name="set_add_title">Auto-add games</string>
-    <string name="set_add_sub">Newly installed games are added for you</string>
+    <string name="set_add_sub">Selects newly installed games for the next Apply.</string>
     <string name="tool_tester">FPS tester</string>
     <string name="tool_tester_sub">Check it works</string>
     <string name="tool_log">Activity log</string>
@@ -40,7 +40,7 @@
     <string name="pk_not_found_long">PowerKeeper not found. This ROM may not support the override.</string>
     <string name="btn_sent">Sent %1$dHz to %2$d apps</string>
     <string name="btn_pk_not_found">PowerKeeper not found</string>
-    <string name="btn_apply">Apply %dHz now</string>
+    <string name="btn_apply">Apply</string>
 
     <!-- Health warnings -->
     <string name="health_battery_title">Battery saver may stop Unlock FPS</string>
@@ -62,7 +62,7 @@
     <!-- About -->
     <string name="about_title">About</string>
     <string name="about_version">Version %s</string>
-    <string name="about_desc">Unlocks high refresh rates in games on Xiaomi, Redmi and POCO phones. It asks PowerKeeper for the rate you pick, so adaptive refresh and battery life stay untouched everywhere else. No root, no PC.</string>
+    <string name="about_desc">Helps remove the unintended 60 FPS cap in games on MIUI/HyperOS devices.</string>
     <string name="about_section_app">App</string>
     <string name="about_update">Check for updates</string>
     <string name="about_update_sub">You\'re on v%s</string>
@@ -87,7 +87,7 @@
     <string name="found">Found</string>
     <string name="missing">Missing</string>
     <string name="hz_value">%d Hz</string>
-    <string name="tester_reapply">Re-test at %d Hz</string>
+    <string name="tester_reapply">Re-apply %dHz</string>
     <string name="tester_copy">Copy report</string>
     <string name="tester_note">This screen measures frames the system actually delivers to Unlock FPS. Games are limited by their own FPS setting too, so set the in-game frame rate to High/Ultra or 120.</string>
     <string name="tester_measuring_at">Measuring at %d Hz…</string>
@@ -115,11 +115,11 @@
     <string name="ob_done">Get started</string>
     <string name="ob1_title">Smooth games, normal battery</string>
     <string name="ob1_body">HyperOS caps many games at 60Hz. Unlock FPS removes that cap only for the games you choose. Everything else keeps adaptive refresh, so battery life stays the same. No root, no PC.</string>
-    <string name="ob2_title">Every game has its own limit</string>
-    <string name="ob2_body">Unlock FPS unlocks the screen, but a game still decides how many frames it draws. Some never go above 60. Others only offer 120 in their own settings, often only on phones the developer has approved. Look for these tags in the app list:</string>
+    <string name="ob2_title">Choose a refresh rate</string>
+    <string name="ob2_body">Choose a refresh rate and select your games, then tap Apply. Some games also require you to enable a higher frame rate in their graphics settings.</string>
     <string name="ob2_tag120">Can go above 60. Turn it on in the game\'s graphics settings.</string>
     <string name="ob2_tag90">Can go up to 90.</string>
-    <string name="ob2_tag60">The game stops at 60. Nothing can make it faster.</string>
+    <string name="ob2_tag60">The game limits its frame rate to 60 FPS.</string>
     <string name="ob3_title">Keep it running</string>
     <string name="ob3_body">HyperOS closes background apps aggressively. Do these steps so Unlock FPS keeps working after you leave the app.</string>
     <string name="ob3_battery">1. Battery saver: No restrictions</string>
@@ -129,7 +129,7 @@
     <string name="ob3_autostart_hint">Find Unlock FPS in the list and switch it on.</string>
 
     <!-- Widget -->
-    <string name="widget_desc">Target rate, on/off and a one-tap rate switch</string>
+    <string name="widget_desc">Shows the last applied target and reapplies it with one tap.</string>
     <string name="widget_status_on">Active</string>
     <string name="widget_status_off">Off</string>
     <string name="widget_turn_on">Turn on</string>
@@ -181,4 +181,14 @@
     <string name="theme_black">Black</string>
     <string name="theme_ruby">Ruby</string>
     <string name="theme_gold">Gold</string>
+    <string name="reset_defaults">Restore defaults</string>
+    <string name="reset_instructions">Turn off automatic reapply. Then open PowerKeeper’s app info and tap “Force stop”.</string>
+    <string name="reset_unavailable">Could not open PowerKeeper app info.</string>
+    <string name="apply_changes">Apply changes</string>
+    <string name="apply_first">Apply a profile in Unlock FPS first.</string>
+    <string name="widget_target">Target</string>
+    <string name="widget_reapply">Reapply</string>
+    <string name="widget_rate_value">%d Hz</string>
+    <string name="widget_sent">Profile sent</string>
+    <string name="widget_no_apps">No apps selected</string>
 </resources>

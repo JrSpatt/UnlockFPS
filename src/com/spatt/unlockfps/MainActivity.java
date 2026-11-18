@@ -70,6 +70,10 @@ public class MainActivity extends Activity {
     }
 
     private final List<AppEntry> allApps = new ArrayList<>();
+    private long lastSentAt;
+    private int lastSentRate;
+    private int lastSentCount;
+    private ProfileDraft draft;
     private Set<String> selectedPackages;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Runnable resetBtnRunnable = this::resetApplyButton;
@@ -111,7 +115,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         Themes.apply(this);
         UiHelper.setupDarkBars(this);
-        selectedPackages = FpsApplier.syncInstalledGames(this);
+        draft = new ProfileDraft(this);
+        selectedPackages = draft.suggestInstalledGames();
         GameCaps.init(this);
         // A stale heartbeat means HyperOS killed the background service while we were away.
         long beat = FpsApplier.lastServiceBeat(this);
@@ -139,11 +144,14 @@ public class MainActivity extends Activity {
         UiHelper.applyNotchSafePadding(this, scroll, 16, 12, 24);
         setContentView(scroll);
 
-        updateBeastUi();
-        updateSegments();
-        updateStatusChip(FpsApplier.isPowerKeeperInstalled(this));
-        applyNow(false, "App started");
-        syncServiceState(FpsApplier.isAutoEnabled(this));
+        if (savedInstanceState != null && savedInstanceState.containsKey("last_sent_at")) {
+            lastSentAt = savedInstanceState.getLong("last_sent_at");
+            lastSentRate = savedInstanceState.getInt("last_sent_rate");
+            lastSentCount = savedInstanceState.getInt("last_sent_count");
+            showLastSent();
+        }
+        if (savedInstanceState == null && FpsApplier.hasAppliedProfile(this) && FpsApplier.isAutoEnabled(this))
+            Auto120Service.ensureRunning(this);
         loadInstalledAppsAsync();
         GameCaps.refreshAsync(this, this::rebindTags);
         if (!FpsApplier.isOnboarded(this)) {
@@ -208,18 +216,29 @@ public class MainActivity extends Activity {
         head.addView(ic);
         head.addView(UiHelper.text(this, getString(titleRes), 15, UiHelper.COL_TEXT, UiHelper.TF_BOLD),
             new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (onDismiss != null) head.addView(actionChip(getString(R.string.health_dismiss), UiHelper.COL_MUTED, v -> onDismiss.run()));
         card.addView(head);
         TextView body = UiHelper.text(this, getString(bodyRes), 13, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
         body.setLineSpacing(dp(3), 1f);
         body.setPadding(dp(30), dp(8), 0, dp(12));
         card.addView(body);
         LinearLayout actions = new LinearLayout(this);
-        actions.setPadding(dp(30), 0, 0, 0);
+        actions.setPadding(0, 0, 0, 0);
         actions.addView(actionChip(getString(R.string.health_fix_battery), UiHelper.COL_WARN,
             v -> UiHelper.requestBatteryExemption(this)));
         actions.addView(actionChip(getString(R.string.health_autostart), UiHelper.COL_WARN,
             v -> UiHelper.openAutostart(this)));
-        actions.addView(actionChip(getString(R.string.health_dismiss), UiHelper.COL_MUTED, v -> onDismiss.run()));
+        actions.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            int needed = 0;
+            for (int i = 0; i < actions.getChildCount(); i++) {
+                TextView chip = (TextView) actions.getChildAt(i);
+                LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) chip.getLayoutParams();
+                needed += (int) Math.ceil(chip.getPaint().measureText(chip.getText().toString()))
+                    + chip.getPaddingLeft() + chip.getPaddingRight() + lp.rightMargin;
+            }
+            int orientation = needed > right - left ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL;
+            if (actions.getOrientation() != orientation) actions.post(() -> actions.setOrientation(orientation));
+        });
         card.addView(actions);
         return card;
     }
@@ -261,10 +280,6 @@ public class MainActivity extends Activity {
         col.addView(sub);
         bar.addView(col);
 
-        View tester = UiHelper.iconButton(this, R.drawable.ui_gauge,
-            v -> startActivity(new Intent(this, FpsTesterActivity.class)));
-        ((LinearLayout.LayoutParams) tester.getLayoutParams()).rightMargin = dp(8);
-        bar.addView(tester);
         bar.addView(UiHelper.iconButton(this, R.drawable.ui_more,
             v -> startActivity(new Intent(this, AboutActivity.class))));
         return bar;
@@ -338,11 +353,8 @@ public class MainActivity extends Activity {
             s.setTag(fps);
             s.setOnClickListener(v -> {
                 v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
-                FpsApplier.setTargetFps(this, fps);
+                draft.setTarget(fps);
                 updateSegments();
-                if (FpsApplier.isAutoEnabled(this)) syncServiceState(true);
-                applyNow(true, "Target " + fps + "Hz");
-                UnlockTileService.requestTileSync(this);
             });
             seg.addView(s, new LinearLayout.LayoutParams(0, dp(42), 1f));
             segments.add(s);
@@ -392,14 +404,14 @@ public class MainActivity extends Activity {
             resetApplyButton();
             return;
         }
-        int active = FpsApplier.effectiveFps(this);
-        boolean beast = FpsApplier.isBeastEnabled(this);
+        int active = draft.beast() ? FpsApplier.getVerifiedMaxFps(this) : draft.target();
+        boolean beast = draft.beast();
         int col = UiHelper.fpsColor(active);
         hzNumber.setText(String.valueOf(active));
         hzNumber.getPaint().setShader(new LinearGradient(0, 0, 0, hzNumber.getTextSize(),
             new int[]{0xFFFFFFFF, UiHelper.mix(col, 0xFFFFFFFF, 0.45f), col}, null, Shader.TileMode.CLAMP));
         hzNumber.invalidate();
-        int target = FpsApplier.getTargetFps(this);
+        int target = draft.target();
         for (TextView s : segments) {
             int fps = (Integer) s.getTag();
             boolean on = !beast && fps == target;
@@ -417,7 +429,7 @@ public class MainActivity extends Activity {
     /** Beast logo: coloured when on, grey and faded when off. The rate picker hides while it is on. */
     private void updateBeastUi() {
         boolean detected = FpsApplier.panelDetected(this);
-        boolean on = detected && FpsApplier.isBeastEnabled(this);
+        boolean on = detected && draft.beast();
         segBar.setVisibility(on || !detected ? View.GONE : View.VISIBLE);
         beastStrip.setVisibility(on || !detected ? View.VISIBLE : View.GONE);
         beastStrip.setTextColor(detected ? UiHelper.COL_BEAST : UiHelper.COL_WARN);
@@ -434,7 +446,7 @@ public class MainActivity extends Activity {
 
     private void onBeastTap(View v) {
         v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
-        if (FpsApplier.isBeastEnabled(this)) {
+        if (draft.beast()) {
             setBeast(false);
         } else if (FpsApplier.getVerifiedMaxFps(this) <= 0) {
             android.widget.Toast.makeText(this, getString(R.string.beast_unavailable),
@@ -447,19 +459,9 @@ public class MainActivity extends Activity {
     }
 
     private void setBeast(boolean on) {
-        FpsApplier.setBeastEnabled(this, on);
-        if (on) {
-            FpsApplier.invalidateBeastCache();
-        } else {
-            // There is no "undo" request: apps already raised may keep the rate until PowerKeeper restarts.
-            android.widget.Toast.makeText(this, getString(R.string.beast_off_note),
-                android.widget.Toast.LENGTH_LONG).show();
-        }
+        draft.setBeast(on);
         updateBeastUi();
         updateSegments();
-        applyNow(true, on ? "Beast mode on" : "Beast mode off");
-        UnlockTileService.requestTileSync(this);
-        UnlockWidget.updateAll(this);
     }
 
     private void showBeastWarning() {
@@ -547,8 +549,8 @@ public class MainActivity extends Activity {
         addSwitch.setOnCheckedChangeListener((b, on) -> {
             FpsApplier.setAutoAddGamesEnabled(this, on);
             if (on) {
-                selectedPackages = FpsApplier.syncInstalledGames(this);
-                applyNow(false, "Auto-add on");
+                selectedPackages = draft.suggestInstalledGames();
+                resetApplyButton();
                 loadInstalledAppsAsync();
             } else {
                 appendLog("Auto-add games off");
@@ -563,74 +565,81 @@ public class MainActivity extends Activity {
     }
 
     private View buildThemeRow() {
-        String cur = Themes.get(this);
-        LinearLayout swatches = new LinearLayout(this);
-        swatches.setGravity(Gravity.CENTER_VERTICAL);
-        for (String id : Themes.ALL) swatches.addView(themeSwatch(id, id.equals(cur)));
-        return UiHelper.row(this, R.drawable.ui_palette, UiHelper.COL_PRIMARY,
-            getString(R.string.set_theme_title), getString(Themes.nameRes(cur)), swatches, null);
-    }
-
-    private View themeSwatch(String id, boolean on) {
-        FrameLayout f = new FrameLayout(this);
-        android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
-        ring.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        ring.setColor(Themes.background(id));
-        ring.setStroke(dp(on ? 3 : 1), on ? Themes.accent(id) : UiHelper.alpha(Themes.accent(id), 0.55f));
-        f.setBackground(ring);
-        View dot = new View(this);
-        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
-        d.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        d.setColor(Themes.accent(id));
-        dot.setBackground(d);
-        f.addView(dot, new FrameLayout.LayoutParams(dp(12), dp(12), Gravity.CENTER));
-        f.setAlpha(on ? 1f : 0.8f);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(30), dp(30));
-        lp.leftMargin = dp(8);
-        f.setLayoutParams(lp);
-        f.setClickable(true);
-        f.setOnClickListener(v -> {
-            if (id.equals(Themes.get(this))) return;
-            Themes.set(this, id);
-            recreate();
-        });
-        return f;
+        return buildPicker(true);
     }
 
     private View buildLanguageRow() {
-        String cur = Lang.get(this);
-        LinearLayout flags = new LinearLayout(this);
-        flags.setGravity(Gravity.CENTER_VERTICAL);
-        flags.addView(flagChip(R.drawable.flag_tr, Lang.TR, cur));
-        flags.addView(flagChip(R.drawable.flag_gb, Lang.EN, cur));
-        return UiHelper.row(this, R.drawable.ui_globe, UiHelper.COL_PRIMARY,
-            getString(R.string.set_lang_title),
-            getString(Lang.TR.equals(cur) ? R.string.lang_name_tr : R.string.lang_name_en), flags, null);
+        return buildPicker(false);
     }
 
-    private View flagChip(int flagRes, String code, String current) {
-        boolean on = code.equals(current);
-        FrameLayout f = new FrameLayout(this);
-        f.setBackground(UiHelper.ripple(this, UiHelper.pillBg(this,
-            on ? UiHelper.alpha(UiHelper.COL_PRIMARY, 0.16f) : 0,
-            on ? UiHelper.alpha(UiHelper.COL_PRIMARY, 0.7f) : UiHelper.COL_OUTLINE, 12), 12));
-        ImageView iv = new ImageView(this);
-        iv.setImageResource(flagRes);
-        iv.setAlpha(on ? 1f : 0.5f);
-        f.addView(iv, new FrameLayout.LayoutParams(dp(26), dp(17), Gravity.CENTER));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(44), dp(34));
-        lp.leftMargin = dp(8);
-        f.setLayoutParams(lp);
-        f.setClickable(true);
-        f.setOnClickListener(v -> {
-            if (code.equals(Lang.get(this))) return;
-            Lang.set(this, code);
-            GameCaps.reload(this);
-            UnlockTileService.requestTileSync(this);
-            UnlockWidget.updateAll(this);
-            recreate();
-        });
-        return f;
+    private View buildPicker(boolean theme) {
+        String current = theme ? Themes.get(this) : Lang.get(this);
+        String[] ids = theme ? Themes.ALL : new String[]{Lang.TR, Lang.EN};
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout choices = new LinearLayout(this);
+        choices.setOrientation(LinearLayout.VERTICAL);
+        choices.setVisibility(View.GONE);
+        choices.setPadding(dp(12), 0, 0, dp(8));
+        ImageView arrow = UiHelper.icon(this, R.drawable.ui_chevron, UiHelper.COL_MUTED, 18);
+        arrow.setRotation(90f);
+        LinearLayout trailing = new LinearLayout(this);
+        trailing.setGravity(Gravity.CENTER_VERTICAL);
+        TextView value = UiHelper.text(this, pickerLabel(theme, current), 13, UiHelper.COL_MUTED, UiHelper.TF_MEDIUM);
+        value.setPadding(0, 0, dp(6), 0);
+        trailing.addView(value);
+        trailing.addView(arrow);
+        group.addView(UiHelper.row(this, theme ? R.drawable.ui_palette : R.drawable.ui_globe, UiHelper.COL_PRIMARY,
+            getString(theme ? R.string.set_theme_title : R.string.set_lang_title), null, trailing, v -> {
+                boolean open = choices.getVisibility() != View.VISIBLE;
+                choices.setVisibility(open ? View.VISIBLE : View.GONE);
+                arrow.setRotation(open ? -90f : 90f);
+            }));
+        for (String id : ids) {
+            boolean selected = id.equals(current);
+            LinearLayout option = new LinearLayout(this);
+            option.setGravity(Gravity.CENTER_VERTICAL);
+            option.setMinimumHeight(dp(46));
+            option.setPadding(dp(12), 0, dp(12), 0);
+            option.setBackground(UiHelper.ripple(this, selected ? UiHelper.pillBg(this, UiHelper.COL_SURFACE_SEL, 0, 12) : null, 12));
+            if (theme) {
+                View swatch = new View(this);
+                swatch.setBackground(UiHelper.pillBg(this, Themes.background(id), Themes.accent(id), 8));
+                option.addView(swatch, new LinearLayout.LayoutParams(dp(22), dp(18)));
+            } else {
+                ImageView flag = new ImageView(this);
+                flag.setImageResource(id.equals(Lang.TR) ? R.drawable.flag_tr : R.drawable.flag_gb);
+                option.addView(flag, new LinearLayout.LayoutParams(dp(22), dp(16)));
+            }
+            TextView label = UiHelper.text(this, pickerLabel(theme, id), 14, UiHelper.COL_TEXT, UiHelper.TF_MEDIUM);
+            label.setPadding(dp(12), 0, 0, 0);
+            option.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
+            if (selected) option.addView(UiHelper.icon(this, R.drawable.ui_check, UiHelper.COL_PRIMARY, 18));
+            option.setSelected(selected);
+            option.setOnClickListener(v -> {
+                if (selected) {
+                    choices.setVisibility(View.GONE);
+                    arrow.setRotation(90f);
+                    return;
+                }
+                if (theme) Themes.set(this, id);
+                else {
+                    Lang.set(this, id);
+                    GameCaps.reload(this);
+                }
+                UnlockWidget.updateAll(this);
+                UnlockTileService.requestTileSync(this);
+                recreate();
+            });
+            choices.addView(option);
+        }
+        group.addView(choices);
+        return group;
+    }
+
+    private String pickerLabel(boolean theme, String id) {
+        if (theme) return getString(Themes.nameRes(id));
+        return getString(Lang.TR.equals(id) ? R.string.lang_name_tr : R.string.lang_name_en);
     }
 
     // ---------------------------------------------------------------- tools + log
@@ -842,8 +851,24 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        if (lastSentAt > 0) {
+            state.putLong("last_sent_at", lastSentAt);
+            state.putInt("last_sent_rate", lastSentRate);
+            state.putInt("last_sent_count", lastSentCount);
+        }
+    }
+
+    private void showLastSent() {
+        String ts = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date(lastSentAt));
+        lastApplied.setText(getString(R.string.last_sent, lastSentRate, lastSentCount, ts));
+    }
+
+    @Override
     protected void onDestroy() {
         // Let the icons go as soon as the screen closes; the background service stays light.
+        ui.removeCallbacks(resetBtnRunnable);
         allApps.clear();
         if (listCard != null) listCard.removeAllViews();
         super.onDestroy();
@@ -946,12 +971,12 @@ public class MainActivity extends Activity {
             boolean nowOn = !selectedPackages.contains(e.packageName);
             if (nowOn) selectedPackages.add(e.packageName);
             else selectedPackages.remove(e.packageName);
-            FpsApplier.setPackageIgnored(this, e.packageName, !nowOn);
-            FpsApplier.savePackages(this, selectedPackages);
+            draft.saveSelection(selectedPackages, e.packageName, e.isGame);
             appendLog((nowOn ? "Added " : "Removed ") + e.packageName);
             styleCheck(e, true);
             updateFilterChips();
-            applyNow(true, "Selection updated");
+            resetApplyButton();
+            if (filter == FILTER_SELECTED) refreshList();
         });
     }
 
@@ -980,7 +1005,7 @@ public class MainActivity extends Activity {
             sb.setSpan(new StyleSpan(Typeface.BOLD), 0, tag.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             sb.append("  \u00B7  ");
         }
-        int own = FpsApplier.getGameFps(this, e.packageName);
+        int own = draft.gameRate(e.packageName);
         if (own > 0) {
             int st = sb.length();
             sb.append(own + "Hz");
@@ -1038,8 +1063,8 @@ public class MainActivity extends Activity {
         System.arraycopy(rates, 0, values, 1, rates.length);
         for (int val : values) {
             String label = val == 0
-                ? (FpsApplier.getTargetFps(this) > 0
-                    ? getString(R.string.dlg_rate_default, FpsApplier.getTargetFps(this))
+                ? (draft.target() > 0
+                    ? getString(R.string.dlg_rate_default, draft.target())
                     : getString(R.string.dlg_rate_default_plain))
                 : String.valueOf(val);
             TextView o = UiHelper.text(this, label, 13.5f, UiHelper.COL_MUTED, UiHelper.TF_BOLD);
@@ -1048,20 +1073,17 @@ public class MainActivity extends Activity {
             o.setTag(val);
             o.setOnClickListener(v -> {
                 v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
-                FpsApplier.setGameFps(this, e.packageName, val);
+                draft.setGameRate(e.packageName, val);
                 styleOptions(opts, val);
                 bindSub(e);
                 tagLine.setText(e.sub.getText());
-                android.widget.Toast.makeText(this, val == 0
-                    ? getString(R.string.game_rate_default, e.label)
-                    : getString(R.string.game_rate_saved, e.label, val), android.widget.Toast.LENGTH_SHORT).show();
                 appendLog(e.packageName + " rate " + (val == 0 ? "default" : val + "Hz"));
-                if (selectedPackages.contains(e.packageName)) applyNow(false, "Game rate");
+                resetApplyButton();
             });
             seg.addView(o, new LinearLayout.LayoutParams(0, dp(40), val == 0 ? 1.9f : 1f));
             opts.add(o);
         }
-        styleOptions(opts, FpsApplier.getGameFps(this, e.packageName));
+        styleOptions(opts, draft.gameRate(e.packageName));
         c.addView(seg, UiHelper.matchWrap(this, 0));
 
         TextView spacer = new TextView(this);
@@ -1113,7 +1135,7 @@ public class MainActivity extends Activity {
 
     private void syncServiceState(boolean enabled) {
         Intent svc = new Intent(this, Auto120Service.class);
-        if (enabled) startForegroundService(svc);
+        if (enabled && FpsApplier.hasAppliedProfile(this)) Auto120Service.ensureRunning(this);
         else stopService(svc);
     }
 
@@ -1122,13 +1144,23 @@ public class MainActivity extends Activity {
             lastApplied.setText(getString(R.string.panel_unknown));
             return;
         }
-        FpsApplier.ApplyResult res = FpsApplier.apply120Hz(this, selectedPackages);
+        if (!FpsApplier.isPowerKeeperInstalled(this)) {
+            lastApplied.setText(R.string.pk_not_found_long);
+            return;
+        }
+        boolean leavingBeast = FpsApplier.isBeastEnabled(this) && !draft.beast();
+        draft.publish();
+        FpsApplier.ApplyResult res = FpsApplier.reapply(this);
+        if (leavingBeast) android.widget.Toast.makeText(this, R.string.beast_off_note, android.widget.Toast.LENGTH_LONG).show();
+        if (FpsApplier.isAutoEnabled(this)) Auto120Service.ensureRunning(this);
+        Auto120Service.refreshNotification(this);
+        UnlockTileService.requestTileSync(this);
         updateStatusChip(res.powerKeeperFound);
         appCountText.setText(getResources().getQuantityString(R.plurals.apps_count, res.count, res.count));
-        String ts = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
-        lastApplied.setText(res.powerKeeperFound
-            ? getString(R.string.last_sent, res.fps, res.count, ts)
-            : getString(R.string.pk_not_found_long));
+        lastSentAt = System.currentTimeMillis();
+        lastSentRate = res.fps;
+        lastSentCount = res.count;
+        showLastSent();
 
         String preview = "";
         if (!res.packages.isEmpty()) {
@@ -1169,10 +1201,12 @@ public class MainActivity extends Activity {
     }
 
     private void resetApplyButton() {
+        int count = draft.beast() ? FpsApplier.beastPackages(this).size() : selectedPackages.size();
+        appCountText.setText(getResources().getQuantityString(R.plurals.apps_count, count, count));
         boolean detected = FpsApplier.panelDetected(this);
         applyBtn.setEnabled(detected);
         applyBtn.setAlpha(detected ? 1f : 0.5f);
-        applyBtn.setText(detected ? getString(R.string.btn_apply, FpsApplier.effectiveFps(this))
+        applyBtn.setText(detected ? getString(draft.hasChanges() ? R.string.apply_changes : R.string.btn_apply)
             : getString(R.string.panel_unknown));
         setButtonIcon(R.drawable.ui_zap);
         UiHelper.styleButton(this, applyBtn, true);

@@ -9,9 +9,9 @@ public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
-            FpsApplier.apply120Hz(context, FpsApplier.syncInstalledGames(context));
+            FpsApplier.reapply(context);
             if (FpsApplier.isAutoEnabled(context)) {
-                context.startForegroundService(new Intent(context, Auto120Service.class));
+                Auto120Service.ensureRunning(context);
             }
         }
     }
