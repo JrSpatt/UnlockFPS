@@ -40,7 +40,7 @@ jobs:
           KEY_PASS: ${{ secrets.KEY_PASSWORD }}
           # A debug-signed test APK is allowed only for manual runs, never for tag/release builds
           ALLOW_DEBUG_KEY: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
-        run: tools/build.sh
+        run: bash tools/build.sh
 
       - uses: actions/upload-artifact@v4
         with:
