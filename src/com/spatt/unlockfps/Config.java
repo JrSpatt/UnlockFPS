@@ -1,27 +1,31 @@
 package com.spatt.unlockfps;
 
 /**
- * Every outside address the app can use. All of them are EMPTY on purpose: fill them in later.
- * An empty value switches the matching feature off (no request is made, no link opens).
+ * Every outside address the app can use. If you create the repo under a different name,
+ * change only REPO below. An empty value switches the matching feature off.
  *
- * Example once your repo exists (replace USER/REPO):
- *   GAMES_JSON_URL    = "https://raw.githubusercontent.com/USER/REPO/main/data/games.json"
- *   RELEASES_API_URL  = "https://api.github.com/repos/USER/REPO/releases/latest"
- *   RELEASES_PAGE_URL = "https://github.com/USER/REPO/releases/latest"
- *   GAME_LIST_URL     = "https://github.com/USER/REPO/blob/main/data/games.json"
+ * The repo must be PUBLIC, otherwise GitHub answers 404 to these requests.
  */
 final class Config {
-    /** Online copy of the game list (downloaded once a day). Empty = use only the bundled list. */
-    static final String GAMES_JSON_URL = "";
+    private static final String OWNER = "JrSpatt";
+    private static final String REPO = "UnlockFPS";
+    private static final String BRANCH = "main";
 
-    /** GitHub "latest release" API address used by the update check. Empty = update check off. */
-    static final String RELEASES_API_URL = "";
+    /** Online game list, downloaded once a day. It is used only if its "version" is higher than the bundled one. */
+    static final String GAMES_JSON_URL =
+        "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/" + BRANCH + "/data/games.json";
+
+    /** "Latest release" API used by the update check (needs at least one published release). */
+    static final String RELEASES_API_URL =
+        "https://api.github.com/repos/" + OWNER + "/" + REPO + "/releases/latest";
 
     /** Page opened when an update is available or the check fails. */
-    static final String RELEASES_PAGE_URL = "";
+    static final String RELEASES_PAGE_URL =
+        "https://github.com/" + OWNER + "/" + REPO + "/releases/latest";
 
     /** Page opened by the "Game list" row in About. */
-    static final String GAME_LIST_URL = "";
+    static final String GAME_LIST_URL =
+        "https://github.com/" + OWNER + "/" + REPO + "/blob/" + BRANCH + "/data/games.json";
 
     private Config() {}
 }
