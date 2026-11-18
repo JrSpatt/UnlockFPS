@@ -31,7 +31,7 @@
     <string name="limit_note">Unlock FPS ekranın kilidini açar, ama her oyunun kendi sınırı vardır. 60 MAX etiketli oyunlar ne yaparsan yap 60 FPS\'te kalır. Oyunun içindeki yüksek kare hızı seçeneğini de aç. Bir uygulamaya uzun basarak ipuçlarını görebilir veya ona özel hız verebilirsin.</string>
     <string name="loading_apps">Yüklü uygulamalar yükleniyor…</string>
     <string name="no_match">Eşleşen uygulama yok</string>
-    <string name="tip_keep_running">İpucu: Uygulama bilgisinde Otomatik başlatmayı aç ve Pil tasarrufunu Kısıtlama yok yap; böylece HyperOS Unlock FPS\'i kapatmaz.</string>
+    <string name="tip_keep_running">İpucu: Uygulama bilgisinde Otomatik başlatmayı aç ve Pil tasarrufunu Kısıtlama yok yap; böylece MIUI/HyperOS Unlock FPS\'i kapatmaz.</string>
     <string name="tag_120">120\'YE KADAR</string>
     <string name="tag_90">90 MAX</string>
     <string name="tag_60">60 MAX</string>
@@ -44,9 +44,9 @@
 
     <!-- Health warnings -->
     <string name="health_battery_title">Pil tasarrufu Unlock FPS\'i durdurabilir</string>
-    <string name="health_battery_body">HyperOS, Unlock FPS\'i arka planda kapatabilir ve oyunların 60\'a geri düşer. Çalışmaya devam etmesi için pil kısıtlamalarını kaldır.</string>
+    <string name="health_battery_body">MIUI/HyperOS, Unlock FPS\'i arka planda kapatabilir ve oyunların 60\'a geri düşer. Çalışmaya devam etmesi için pil kısıtlamalarını kaldır.</string>
     <string name="health_killed_title">Unlock FPS arka planda durduruldu</string>
-    <string name="health_killed_body">Sen yokken HyperOS onu kapattı. Çalışmaya devam etmesi için Otomatik başlatmaya izin ver ve pil kısıtlamalarını kaldır. Şu an yeniden çalışıyor.</string>
+    <string name="health_killed_body">Sen yokken MIUI/HyperOS onu kapattı. Çalışmaya devam etmesi için Otomatik başlatmaya izin ver ve pil kısıtlamalarını kaldır. Şu an yeniden çalışıyor.</string>
     <string name="health_fix_battery">Kısıtlamayı kaldır</string>
     <string name="health_autostart">Otomatik başlat</string>
     <string name="health_dismiss">Kapat</string>
@@ -60,7 +60,7 @@
     <string name="game_rate_default">%s ana hızı izliyor</string>
 
     <!-- About -->
-    <string name="about_title">Hakkında</string>
+    <string name="about_title">Ayarlar</string>
     <string name="about_version">Sürüm %s</string>
     <string name="about_desc">MIUI/HyperOS cihazlarda oyunlardaki hatalı 60 fps kilidini kaldırmaya yarar.</string>
     <string name="about_section_app">Uygulama</string>
@@ -87,7 +87,7 @@
     <string name="found">Var</string>
     <string name="missing">Yok</string>
     <string name="hz_value">%d Hz</string>
-    <string name="tester_reapply">%dHz yeniden uygula</string>
+    <string name="tester_reapply">%d Hz yeniden uygula</string>
     <string name="tester_copy">Raporu kopyala</string>
     <string name="tester_note">Bu ekran, sistemin Unlock FPS\'e gerçekten ilettiği kareleri ölçer. Oyunlar kendi FPS ayarıyla da sınırlıdır; oyun içi kare hızını Yüksek/Ultra veya 120 yap.</string>
     <string name="tester_measuring_at">%d Hz\'de ölçülüyor…</string>
@@ -180,7 +180,7 @@
     <string name="theme_oled">OLED</string>
     <string name="theme_black">Siyah</string>
     <string name="theme_ruby">Ruby</string>
-    <string name="theme_gold">Gold</string>
+    <string name="theme_jade">Yeşim</string>
     <string name="reset_defaults">Varsayılana dön</string>
     <string name="reset_instructions">Otomatik gönderimi kapat. Ardından Pil ve Performans uygulamasının bilgi ekranında “Zorla durdur”a dokun.</string>
     <string name="reset_unavailable">Pil ve Performans uygulama bilgisi açılamadı.</string>
@@ -191,4 +191,5 @@
     <string name="widget_rate_value">%d Hz</string>
     <string name="widget_sent">Profil gönderildi</string>
     <string name="widget_no_apps">Seçili uygulama yok</string>
+    <string name="appearance">Görünüm</string>
 </resources>

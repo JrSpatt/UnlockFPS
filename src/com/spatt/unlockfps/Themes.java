@@ -7,8 +7,8 @@ import android.graphics.Color;
 final class Themes {
     static final String OLED = "oled";
     static final String RUBY = "ruby";
-    static final String GOLD = "gold";
-    static final String[] ALL = {OLED, RUBY, GOLD};
+    static final String JADE = "jade";
+    static final String[] ALL = {OLED, RUBY, JADE};
 
     private static final String PREFS = "unlock_fps_prefs";
     private static final String KEY = "theme";
@@ -17,6 +17,10 @@ final class Themes {
 
     static String get(Context ctx) {
         String saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, OLED);
+        if ("gold".equals(saved)) {
+            set(ctx, JADE);
+            return JADE;
+        }
         for (String t : ALL) if (t.equals(saved)) return saved;
         return OLED;
     }
@@ -30,7 +34,7 @@ final class Themes {
         switch (id) {
             case OLED: return Color.parseColor("#38BDF8");
             case RUBY: return Color.parseColor("#FB4F76");
-            case GOLD: return Color.parseColor("#F5C542");
+            case JADE: return Color.parseColor("#70DAB3");
             default: return Color.parseColor("#38BDF8");
         }
     }
@@ -40,7 +44,7 @@ final class Themes {
         switch (id) {
             case OLED: return Color.parseColor("#000000");
             case RUBY: return Color.parseColor("#1A0A10");
-            case GOLD: return Color.parseColor("#18140A");
+            case JADE: return Color.parseColor("#10221E");
             default: return Color.parseColor("#1C1C1F");
         }
     }
@@ -49,7 +53,7 @@ final class Themes {
         switch (id) {
             case OLED: return R.string.theme_oled;
             case RUBY: return R.string.theme_ruby;
-            case GOLD: return R.string.theme_gold;
+            case JADE: return R.string.theme_jade;
             default: return R.string.theme_oled;
         }
     }
@@ -68,11 +72,11 @@ final class Themes {
                     Color.parseColor("#FBEFF2"), Color.parseColor("#B58C97"), Color.parseColor("#7A5560"), Color.parseColor("#2A0A14"), Color.parseColor("#1C0710"),
                     Color.parseColor("#080304"), Color.parseColor("#2A121B"), Color.parseColor("#0F0508"), Color.parseColor("#4A2230"));
                 break;
-            case GOLD:
-                set(Color.parseColor("#0C0A05"), Color.parseColor("#18140A"), Color.parseColor("#211B0D"), Color.parseColor("#2A220C"), Color.parseColor("#3A3015"), Color.parseColor("#231D0D"),
-                    Color.parseColor("#F5C542"), Color.parseColor("#FFD97A"), Color.parseColor("#D4A017"), Color.parseColor("#2DD4BF"), Color.parseColor("#1A1200"),
-                    Color.parseColor("#FAF5E6"), Color.parseColor("#B3A57F"), Color.parseColor("#7A6E4F"), Color.parseColor("#2A2108"), Color.parseColor("#1B1505"),
-                    Color.parseColor("#070502"), Color.parseColor("#2A220F"), Color.parseColor("#0E0B04"), Color.parseColor("#4A3E1C"));
+            case JADE:
+                set(Color.parseColor("#081412"), Color.parseColor("#10221E"), Color.parseColor("#172F29"), Color.parseColor("#194038"), Color.parseColor("#2B493F"), Color.parseColor("#1A342E"),
+                    Color.parseColor("#70DAB3"), Color.parseColor("#A7E8CD"), Color.parseColor("#57BAA7"), Color.parseColor("#2DD4BF"), Color.parseColor("#07251D"),
+                    Color.parseColor("#E8F6EF"), Color.parseColor("#ABC5B9"), Color.parseColor("#78998A"), Color.parseColor("#12372E"), Color.parseColor("#0D2928"),
+                    Color.parseColor("#081C18"), Color.parseColor("#234239"), Color.parseColor("#0C211C"), Color.parseColor("#396654"));
                 break;
         }
     }

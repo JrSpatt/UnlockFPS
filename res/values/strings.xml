@@ -31,7 +31,7 @@
     <string name="limit_note">Unlock FPS unlocks the screen, but each game has its own limit. Games tagged 60 MAX stop at 60 FPS whatever you do. Turn on the high frame-rate option inside the game too. Long-press an app for tips or to give it its own rate.</string>
     <string name="loading_apps">Loading installed apps…</string>
     <string name="no_match">No apps match</string>
-    <string name="tip_keep_running">Tip: in App info, turn on Autostart and set Battery saver to No restrictions so HyperOS keeps Unlock FPS running.</string>
+    <string name="tip_keep_running">Tip: in App info, turn on Autostart and set Battery saver to No restrictions so MIUI/HyperOS keeps Unlock FPS running.</string>
     <string name="tag_120">UP TO 120</string>
     <string name="tag_90">90 MAX</string>
     <string name="tag_60">60 MAX</string>
@@ -44,9 +44,9 @@
 
     <!-- Health warnings -->
     <string name="health_battery_title">Battery saver may stop Unlock FPS</string>
-    <string name="health_battery_body">HyperOS can close Unlock FPS in the background, and your games drop back to 60. Remove the battery limits to keep it running.</string>
+    <string name="health_battery_body">MIUI/HyperOS can close Unlock FPS in the background, and your games drop back to 60. Remove the battery limits to keep it running.</string>
     <string name="health_killed_title">Unlock FPS was stopped in the background</string>
-    <string name="health_killed_body">HyperOS closed it while you were away. Allow Autostart and remove battery limits so it keeps running. It\'s running again now.</string>
+    <string name="health_killed_body">MIUI/HyperOS closed it while you were away. Allow Autostart and remove battery limits so it keeps running. It\'s running again now.</string>
     <string name="health_fix_battery">Remove limits</string>
     <string name="health_autostart">Autostart</string>
     <string name="health_dismiss">Dismiss</string>
@@ -60,7 +60,7 @@
     <string name="game_rate_default">%s follows the main rate</string>
 
     <!-- About -->
-    <string name="about_title">About</string>
+    <string name="about_title">Settings</string>
     <string name="about_version">Version %s</string>
     <string name="about_desc">Helps remove the unintended 60 FPS cap in games on MIUI/HyperOS devices.</string>
     <string name="about_section_app">App</string>
@@ -87,7 +87,7 @@
     <string name="found">Found</string>
     <string name="missing">Missing</string>
     <string name="hz_value">%d Hz</string>
-    <string name="tester_reapply">Re-apply %dHz</string>
+    <string name="tester_reapply">Reapply %d Hz</string>
     <string name="tester_copy">Copy report</string>
     <string name="tester_note">This screen measures frames the system actually delivers to Unlock FPS. Games are limited by their own FPS setting too, so set the in-game frame rate to High/Ultra or 120.</string>
     <string name="tester_measuring_at">Measuring at %d Hz…</string>
@@ -180,7 +180,7 @@
     <string name="theme_oled">OLED</string>
     <string name="theme_black">Black</string>
     <string name="theme_ruby">Ruby</string>
-    <string name="theme_gold">Gold</string>
+    <string name="theme_jade">Jade</string>
     <string name="reset_defaults">Restore defaults</string>
     <string name="reset_instructions">Turn off automatic reapply. Then open PowerKeeper’s app info and tap “Force stop”.</string>
     <string name="reset_unavailable">Could not open PowerKeeper app info.</string>
@@ -191,4 +191,5 @@
     <string name="widget_rate_value">%d Hz</string>
     <string name="widget_sent">Profile sent</string>
     <string name="widget_no_apps">No apps selected</string>
+    <string name="appearance">Appearance</string>
 </resources>

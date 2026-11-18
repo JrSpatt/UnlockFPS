@@ -44,7 +44,7 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
     private float displayHz = 0f;
     private int maxHz = 120;
     private int testFps = 120;
-    private final java.util.List<TextView> testSegs = new java.util.ArrayList<>();
+    private RateSelector testSelector;
 
     /** 240° arc gauge with labelled refresh-rate ticks. */
     private static final class GaugeView extends View {
@@ -228,21 +228,10 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
         TextView testLabel = UiHelper.overline(this, getString(R.string.tester_test_at), UiHelper.COL_DIM);
         testLabel.setPadding(dp(4), dp(20), 0, dp(10));
         card.addView(testLabel, UiHelper.matchWrap(this, 0));
-        LinearLayout seg = new LinearLayout(this);
-        seg.setBackground(UiHelper.pillBg(this, UiHelper.alpha(0xFF000000, 0.28f), UiHelper.COL_OUTLINE, 16));
-        seg.setPadding(dp(4), dp(4), dp(4), dp(4));
-        for (int fps : FpsApplier.detectSupportedFps(this)) {
-            TextView s = UiHelper.text(this, fps + " Hz", 14, UiHelper.COL_MUTED, UiHelper.TF_BOLD);
-            s.setGravity(Gravity.CENTER);
-            s.setTag(fps);
-            s.setOnClickListener(v -> {
-                v.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
-                startTest(fps);
-            });
-            seg.addView(s, new LinearLayout.LayoutParams(0, dp(40), 1f));
-            testSegs.add(s);
-        }
-        card.addView(seg, UiHelper.matchWrap(this, 0));
+        testSelector = new RateSelector(this, this::startTest);
+        for (int fps : FpsApplier.detectSupportedFps(this))
+            testSelector.addRate(fps, fps + " Hz", 1f);
+        card.addView(testSelector, UiHelper.matchWrap(this, 0));
         root.addView(card);
 
         // Motion preview
@@ -269,7 +258,7 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
         root.addView(grid2);
 
         // Actions
-        applyBtn = UiHelper.button(this, getString(R.string.tester_reapply, FpsApplier.getTargetFps(this)),
+        applyBtn = UiHelper.button(this, getString(R.string.tester_reapply, testFps),
             R.drawable.ui_refresh, true, v -> {
                 startTest(testFps);
             });
@@ -347,12 +336,8 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
             getWindow().setAttributes(lp);
         } catch (Exception ignored) {
         }
-        for (TextView s : testSegs) {
-            boolean on = (Integer) s.getTag() == fps;
-            s.setTextColor(on ? UiHelper.COL_ON_PRIMARY : UiHelper.COL_MUTED);
-            s.setBackground(on ? UiHelper.gradientBg(this, 12, UiHelper.COL_PRIMARY, UiHelper.COL_ACCENT2)
-                : UiHelper.ripple(this, null, 12));
-        }
+        testSelector.select(fps);
+        applyBtn.setText(getString(R.string.tester_reapply, fps));
         if (statTarget != null) statTarget.setText(getString(R.string.hz_value, fps));
         windowStartNs = 0L;
         frameCount = 0;
