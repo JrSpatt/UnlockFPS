@@ -87,7 +87,7 @@
     <string name="found">Found</string>
     <string name="missing">Missing</string>
     <string name="hz_value">%d Hz</string>
-    <string name="tester_reapply">Re-apply %dHz</string>
+    <string name="tester_reapply">Re-test at %d Hz</string>
     <string name="tester_copy">Copy report</string>
     <string name="tester_note">This screen measures frames the system actually delivers to Unlock FPS. Games are limited by their own FPS setting too, so set the in-game frame rate to High/Ultra or 120.</string>
     <string name="tester_measuring_at">Measuring at %d Hz…</string>

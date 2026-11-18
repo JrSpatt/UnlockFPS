@@ -170,9 +170,24 @@ public final class FpsApplier {
         SharedPreferences sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         int saved = sp.getInt(KEY_TARGET_FPS, -1);
         if (saved > 0) {
-            return saved;
+            return snapToPanel(ctx, saved);
         }
         return getMaxSupportedFps(ctx);
+    }
+
+    /**
+     * Makes a saved rate valid for the panel as it is NOW: the same rate if the panel lists it, otherwise the
+     * highest listed rate below it (or the lowest listed one). Returns 0 when the panel cannot be read.
+     */
+    public static int snapToPanel(Context ctx, int rate) {
+        int[] rates = readPanelRates(ctx);
+        if (rates.length == 0) return 0;
+        int best = rates[0];
+        for (int r : rates) {
+            if (r == rate) return r;
+            if (r < rate) best = r;
+        }
+        return best;
     }
 
     public static void setTargetFps(Context ctx, int fps) {
@@ -254,8 +269,9 @@ public final class FpsApplier {
         return (isBeastEnabled(ctx) && verified > 0) ? verified : getTargetFps(ctx);
     }
 
-    private static ApplyResult applyInternal(Context ctx, Set<String> pkgs, int fps, boolean allowBeast) {
+    private static ApplyResult applyInternal(Context ctx, Set<String> pkgs, int requestedFps, boolean allowBeast) {
         boolean pkFound = isPowerKeeperInstalled(ctx);
+        int fps = snapToPanel(ctx, requestedFps); // never send a rate the panel does not list
         int maxFps = getVerifiedMaxFps(ctx);
         if (maxFps <= 0) {
             // Panel not detected: never send an unverified rate.
@@ -270,8 +286,8 @@ public final class FpsApplier {
         for (String pkg : all) {
             String trimmed = pkg.trim();
             if (trimmed.isEmpty()) continue;
-            int own = getGameFps(ctx, trimmed);
-            int rate = beast ? maxFps : (allowBeast && own > 0 ? own : fps);
+            int own = allowBeast ? snapToPanel(ctx, getGameFps(ctx, trimmed)) : 0;
+            int rate = beast ? maxFps : (own > 0 ? own : fps);
             Intent intent = new Intent(ACTION_OVERRIDE);
             intent.putExtra("override_pkg_name", trimmed);
             intent.putExtra("override_freshrate", rate);

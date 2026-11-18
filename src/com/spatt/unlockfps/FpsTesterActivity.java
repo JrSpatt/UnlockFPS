@@ -265,11 +265,11 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
         root.addView(grid2);
 
         // Actions
-        applyBtn = UiHelper.button(this, getString(R.string.tester_reapply, FpsApplier.getTargetFps(this)),
+        applyBtn = UiHelper.button(this, getString(R.string.tester_reapply, testFps),
             R.drawable.ui_refresh, true, v -> {
-                FpsApplier.ApplyResult res = FpsApplier.apply120Hz(this, FpsApplier.loadPackages(this));
+                // Only this screen's own package; never the general profile or Beast mode.
                 startTest(testFps);
-                Toast.makeText(this, getString(R.string.btn_sent, res.fps, res.count), Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.tester_sent_self, testFps), Toast.LENGTH_SHORT).show();
             });
         ((LinearLayout.LayoutParams) applyBtn.getLayoutParams()).topMargin = dp(18);
         root.addView(applyBtn);
@@ -328,6 +328,7 @@ public class FpsTesterActivity extends Activity implements Choreographer.FrameCa
      */
     private void startTest(int fps) {
         testFps = fps;
+        if (applyBtn != null) applyBtn.setText(getString(R.string.tester_reapply, fps));
         FpsApplier.applyTargetFps(this, java.util.Collections.singleton(getPackageName()), fps);
         try {
             Display d = getWindowManager().getDefaultDisplay();

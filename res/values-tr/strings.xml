@@ -87,7 +87,7 @@
     <string name="found">Var</string>
     <string name="missing">Yok</string>
     <string name="hz_value">%d Hz</string>
-    <string name="tester_reapply">%dHz yeniden uygula</string>
+    <string name="tester_reapply">%d Hz ile yeniden test et</string>
     <string name="tester_copy">Raporu kopyala</string>
     <string name="tester_note">Bu ekran, sistemin Unlock FPS\'e gerçekten ilettiği kareleri ölçer. Oyunlar kendi FPS ayarıyla da sınırlıdır; oyun içi kare hızını Yüksek/Ultra veya 120 yap.</string>
     <string name="tester_measuring_at">%d Hz\'de ölçülüyor…</string>
