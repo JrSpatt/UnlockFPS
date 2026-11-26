@@ -6,11 +6,20 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
 import android.widget.RemoteViews;
 
 /** Home-screen widget: last applied target and one-tap reapply. */
 public class UnlockWidget extends AppWidgetProvider {
     private static final String ACTION_REAPPLY = "com.spatt.unlockfps.widget.REAPPLY";
+
+    private static final Handler handler = new Handler(Looper.getMainLooper());
+    private static final int SPIN_MS = 420;
+    private static final int RESULT_MS = 2000;
+    private static boolean spinning;
+    private static int feedback;
 
     /** Redraws every placed widget. Safe to call from anywhere state changes. */
     public static void updateAll(Context ctx) {
@@ -64,35 +73,79 @@ public class UnlockWidget extends AppWidgetProvider {
     @Override
     public void onReceive(Context ctx, Intent intent) {
         super.onReceive(ctx, intent);
-        if (!ACTION_REAPPLY.equals(intent.getAction())) return;
-        Context local = Lang.wrap(ctx);
-        FpsApplier.ApplyResult result = FpsApplier.reapply(ctx);
-        int message;
-        if (!FpsApplier.hasAppliedProfile(ctx)) message = R.string.apply_first;
-        else if (!result.powerKeeperFound) message = R.string.pk_not_found_long;
-        else if (!FpsApplier.panelDetected(ctx)) message = R.string.panel_unknown;
-        else if (result.count == 0) message = R.string.widget_no_apps;
-        else message = R.string.widget_sent;
-        android.widget.Toast.makeText(local, local.getString(message), android.widget.Toast.LENGTH_SHORT).show();
-        updateAll(ctx);
+        if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(intent.getAction())) {
+            updateAll(ctx);
+            return;
+        }
+        if (!ACTION_REAPPLY.equals(intent.getAction()) || spinning || feedback != 0) return;
+        if (!hasTargets(ctx)) {
+            updateAll(ctx);
+            return;
+        }
+
+        Context app = ctx.getApplicationContext();
+        spinning = true;
+        updateAll(app);
+        FpsApplier.ApplyResult result = FpsApplier.reapply(app);
+        int message = result.count > 0 ? R.string.widget_sent
+            : !result.powerKeeperFound ? R.string.btn_pk_not_found
+            : !FpsApplier.panelDetected(app) ? R.string.panel_unknown : R.string.widget_failed;
+        // Keep the receiver alive only for this tap. The launcher animates the refresh icon.
+        PendingResult pending = goAsync();
+        handler.postDelayed(() -> {
+            spinning = false;
+            feedback = message;
+            try {
+                updateAll(app);
+            } finally {
+                handler.postDelayed(() -> {
+                    feedback = 0;
+                    try {
+                        updateAll(app);
+                    } finally {
+                        pending.finish();
+                    }
+                }, RESULT_MS);
+            }
+        }, SPIN_MS);
+    }
+
+    private static boolean hasTargets(Context ctx) {
+        return FpsApplier.hasAppliedProfile(ctx) && !(FpsApplier.isBeastEnabled(ctx)
+            ? FpsApplier.beastPackages(ctx) : FpsApplier.loadPackages(ctx)).isEmpty();
     }
 
     private static RemoteViews build(Context base) {
         Context ctx = Lang.wrap(base);
         RemoteViews v = new RemoteViews(ctx.getPackageName(), R.layout.widget_unlock);
+        boolean ready = hasTargets(ctx);
+        boolean busy = ready && spinning;
+        int message = ready ? feedback : 0;
         int fps = FpsApplier.hasAppliedProfile(ctx) ? FpsApplier.effectiveFps(ctx) : 0;
-        v.setTextViewText(R.id.widget_target, ctx.getString(R.string.widget_target));
+        int caption = !ready ? R.string.widget_pick : message == 0 ? R.string.widget_target : message;
+        int action = ready ? R.string.widget_reapply : R.string.widget_pick;
+        int icon = !ready ? R.drawable.ui_chevron : message == R.string.widget_sent ? R.drawable.widget_check
+            : message != 0 ? R.drawable.ui_info : R.drawable.ui_refresh;
+        int color = message == R.string.widget_sent ? 0xff83daa1 : message != 0 ? 0xffffbf72 : 0xffbac2ce;
+
+        v.setTextViewText(R.id.widget_target, ctx.getString(caption));
+        v.setTextColor(R.id.widget_target, color);
         v.setTextViewText(R.id.widget_hz, fps > 0 ? ctx.getString(R.string.widget_rate_value, fps) : "—");
         v.setTextColor(R.id.widget_hz, fps > 0 ? UiHelper.fpsColor(fps) : 0xffaeb7c2);
-        v.setContentDescription(R.id.widget_reapply, ctx.getString(R.string.widget_reapply));
-        v.setOnClickPendingIntent(R.id.widget_reapply, broadcast(ctx, ACTION_REAPPLY, 4));
-        v.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(ctx, 3,
-            new Intent(ctx, MainActivity.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
-        return v;
-    }
+        v.setImageViewResource(R.id.widget_icon, icon);
+        v.setViewVisibility(R.id.widget_icon, busy ? View.INVISIBLE : View.VISIBLE);
+        v.setViewVisibility(R.id.widget_spin, busy ? View.VISIBLE : View.GONE);
+        v.setContentDescription(R.id.widget_reapply, ctx.getString(message != 0 ? message : action));
 
-    private static PendingIntent broadcast(Context ctx, String action, int code) {
-        Intent i = new Intent(ctx, UnlockWidget.class).setAction(action);
-        return PendingIntent.getBroadcast(ctx, code, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Intent open = new Intent(ctx, MainActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (!ready) open.setAction(MainActivity.ACTION_PICK_PROFILE);
+        int flags = PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT;
+        PendingIntent launch = PendingIntent.getActivity(ctx, ready ? 3 : 5, open, flags);
+        PendingIntent reapply = PendingIntent.getBroadcast(ctx, 4,
+            new Intent(ctx, UnlockWidget.class).setAction(ACTION_REAPPLY), flags);
+        v.setOnClickPendingIntent(R.id.widget_root, launch);
+        v.setOnClickPendingIntent(R.id.widget_reapply, ready ? reapply : launch);
+        return v;
     }
 }

@@ -79,6 +79,12 @@ public class MainActivity extends Activity {
     private final Runnable resetBtnRunnable = this::resetApplyButton;
     private final Deque<String> logLines = new ArrayDeque<>();
     private ScrollView homeScroll;
+    static final String ACTION_PICK_PROFILE = "com.spatt.unlockfps.PICK_PROFILE";
+    private View appsSection;
+    private boolean appsLoaded, pendingPickerScroll;
+    private EditText appSearch;
+    private final Runnable catalogListener = this::catalogChanged;
+    private int catalogRevision, loadRequest;
     private int restoreHomeY;
     private String renderedTheme, renderedLang, searchText = "";
     private final TextView[] filterChips = new TextView[FILTER_COUNT];
@@ -128,6 +134,7 @@ public class MainActivity extends Activity {
         UiHelper.setupDarkBars(this);
         draft = new ProfileDraft(this);
         selectedPackages = draft.suggestInstalledGames();
+        catalogRevision = InstalledApps.get(this).revision();
         GameCaps.init(this);
         // A stale heartbeat means HyperOS killed the background service while we were away.
         long beat = FpsApplier.lastServiceBeat(this);
@@ -145,7 +152,8 @@ public class MainActivity extends Activity {
         content.addView(buildSettings());
         content.addView(buildTools());
         content.addView(buildLog());
-        content.addView(buildAppsSection());
+        appsSection = buildAppsSection();
+        content.addView(appsSection);
 
         ScrollView scroll = new ScrollView(this);
         homeScroll = scroll;
@@ -172,9 +180,56 @@ public class MainActivity extends Activity {
             Auto120Service.ensureRunning(this);
         loadInstalledAppsAsync();
         GameCaps.refreshAsync(this, this::rebindTags);
-        if (!FpsApplier.isOnboarded(this)) {
+        if (!FpsApplier.isOnboarded(this) && !ACTION_PICK_PROFILE.equals(getIntent().getAction())) {
             startActivity(new Intent(this, OnboardingActivity.class));
         }
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        InstalledApps catalog = InstalledApps.get(this);
+        catalog.addListener(catalogListener);
+        if (catalog.revision() != catalogRevision) catalogChanged();
+    }
+
+    @Override protected void onStop() {
+        InstalledApps.get(this).removeListener(catalogListener);
+        super.onStop();
+    }
+
+    private void catalogChanged() {
+        InstalledApps catalog = InstalledApps.get(this);
+        catalogRevision = catalog.revision();
+        selectedPackages = draft.suggestInstalledGames();
+        allApps.removeIf(app -> !catalog.packages().contains(app.packageName));
+        refreshList();
+        updateFilterChips();
+        resetApplyButton();
+        loadInstalledAppsAsync();
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        openPickerIfRequested();
+    }
+
+    private void openPickerIfRequested() {
+        if (!ACTION_PICK_PROFILE.equals(getIntent().getAction())) return;
+        getIntent().setAction(null);
+        restoreHomeY = 0;
+        filter = FILTER_ALL;
+        appSearch.setText("");
+        updateFilterChips();
+        refreshList();
+        pendingPickerScroll = true;
+        scrollToPicker();
+    }
+
+    private void scrollToPicker() {
+        if (!pendingPickerScroll || !appsLoaded) return;
+        pendingPickerScroll = false;
+        homeScroll.post(() -> homeScroll.scrollTo(0, appsSection.getTop()));
     }
 
     @Override
@@ -184,6 +239,7 @@ public class MainActivity extends Activity {
             recreate();
             return;
         }
+        openPickerIfRequested();
         updateHealth();
         // The widget or the quick tile may have changed things while we were away.
         syncingUi = true;
@@ -479,7 +535,7 @@ public class MainActivity extends Activity {
         head.addView(UiHelper.text(this, getString(R.string.beast_title), 20, UiHelper.COL_TEXT, UiHelper.TF_BOLD));
         c.addView(head);
 
-        TextView body = UiHelper.text(this, getString(R.string.beast_warn_body, FpsApplier.getVerifiedMaxFps(this)),
+        TextView body = UiHelper.text(this, getString(R.string.beast_warn_body),
             14, UiHelper.COL_MUTED, UiHelper.TF_REGULAR);
         body.setLineSpacing(dp(4), 1f);
         body.setPadding(0, dp(14), 0, dp(10));
@@ -650,6 +706,7 @@ public class MainActivity extends Activity {
         search.setLayoutParams(UiHelper.matchWrap(this, 12));
         search.addView(UiHelper.icon(this, R.drawable.ui_search, UiHelper.COL_DIM, 18));
         EditText box = new EditText(this);
+        appSearch = box;
         box.setHint(getString(R.string.search_hint));
         box.setHintTextColor(UiHelper.COL_DIM);
         box.setTextColor(UiHelper.COL_TEXT);
@@ -720,13 +777,6 @@ public class MainActivity extends Activity {
         emptyText.setPadding(0, dp(28), 0, dp(28));
         listCard.addView(emptyText, UiHelper.matchWrap(this, 0));
         sec.addView(listCard);
-
-        TextView hint = UiHelper.text(this,
-            getString(R.string.tip_keep_running),
-            12, UiHelper.COL_DIM, UiHelper.TF_REGULAR);
-        hint.setLineSpacing(dp(3), 1f);
-        hint.setPadding(dp(6), dp(16), dp(6), 0);
-        sec.addView(hint);
 
         updateFilterChips();
         return sec;
@@ -803,28 +853,31 @@ public class MainActivity extends Activity {
     }
 
     private void loadInstalledAppsAsync() {
+        int request = ++loadRequest;
+        List<ApplicationInfo> entries = InstalledApps.get(this).entries();
+        Set<String> selected = new java.util.HashSet<>(selectedPackages);
         new Thread(() -> {
             PackageManager pm = getPackageManager();
             List<AppEntry> list = new ArrayList<>();
-            for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
-                if (pm.getLaunchIntentForPackage(ai.packageName) == null) continue;
-                if (getPackageName().equals(ai.packageName)) continue;
+            for (ApplicationInfo ai : entries) {
                 list.add(new AppEntry(pm.getApplicationLabel(ai).toString(), ai.packageName,
                     smallIcon(pm.getApplicationIcon(ai)), FpsApplier.isGameApp(ai), FpsApplier.isSystemApp(ai)));
             }
             Collections.sort(list, (a, b) -> {
-                boolean as = selectedPackages.contains(a.packageName);
-                boolean bs = selectedPackages.contains(b.packageName);
+                boolean as = selected.contains(a.packageName);
+                boolean bs = selected.contains(b.packageName);
                 if (as != bs) return as ? -1 : 1;
                 if (a.isGame != b.isGame) return a.isGame ? -1 : 1;
                 return a.label.compareToIgnoreCase(b.label);
             });
             ui.post(() -> {
-                if (isDestroyed() || isFinishing()) return;
+                if (request != loadRequest || isDestroyed() || isFinishing()) return;
                 allApps.clear();
                 allApps.addAll(list);
+                appsLoaded = true;
                 updateFilterChips();
                 refreshList();
+                scrollToPicker();
                 if (restoreHomeY > 0) {
                     homeScroll.post(() -> {
                         homeScroll.scrollTo(0, restoreHomeY);
@@ -853,7 +906,7 @@ public class MainActivity extends Activity {
             shown++;
         }
         if (shown == 0) {
-            emptyText.setText(getString(allApps.isEmpty() ? R.string.loading_apps : R.string.no_match));
+            emptyText.setText(getString(appsLoaded ? R.string.no_match : R.string.loading_apps));
             listCard.addView(emptyText);
         }
     }
@@ -1063,6 +1116,15 @@ public class MainActivity extends Activity {
         UnlockTileService.requestTileSync(this);
         updateStatusChip(res.powerKeeperFound);
         appCountText.setText(getResources().getQuantityString(R.plurals.apps_count, res.count, res.count));
+        if (res.count == 0) {
+            boolean empty = draft.beast() ? FpsApplier.beastPackages(this).isEmpty() : selectedPackages.isEmpty();
+            int message = empty ? R.string.widget_no_apps : R.string.widget_failed;
+            lastApplied.setText(message);
+            appendLog(getString(message));
+            resetApplyButton();
+            UnlockWidget.updateAll(this);
+            return;
+        }
         lastSentAt = System.currentTimeMillis();
         lastSentRate = res.fps;
         lastSentCount = res.count;

@@ -31,7 +31,6 @@
     <string name="limit_note">Unlock FPS unlocks the screen, but each game has its own limit. Games tagged 60 MAX stop at 60 FPS whatever you do. Turn on the high frame-rate option inside the game too. Long-press an app for tips or to give it its own rate.</string>
     <string name="loading_apps">Loading installed apps…</string>
     <string name="no_match">No apps match</string>
-    <string name="tip_keep_running">Tip: in App info, turn on Autostart and set Battery saver to No restrictions so MIUI/HyperOS keeps Unlock FPS running.</string>
     <string name="tag_120">UP TO 120</string>
     <string name="tag_90">90 MAX</string>
     <string name="tag_60">60 MAX</string>
@@ -152,10 +151,10 @@
     <string name="v_clamped_refresh">First check Settings → Display → Refresh rate is set to 120Hz (High). On 60Hz (Standard) nothing can go higher.</string>
 
     <!-- Beast mode -->
-    <string name="beast_caption">Beast mode: every app runs at the highest rate</string>
-    <string name="beast_strip">BEAST MODE · all apps %dHz</string>
+    <string name="beast_caption">Requests the highest refresh rate for launchable apps.</string>
+    <string name="beast_strip">BEAST MODE · Target %d Hz</string>
     <string name="beast_title">Beast mode</string>
-    <string name="beast_warn_body">Beast mode pushes the system to full performance: every app, system apps included, gets the highest refresh rate (%dHz). Battery use and heat can go up. Use with care.</string>
+    <string name="beast_warn_body">Beast Mode requests the highest refresh rate your display supports for all launchable apps, including system apps. Enable Beast Mode?</string>
     <string name="beast_dont_show">Don\'t show again</string>
     <string name="beast_ok">OK</string>
     <string name="beast_cancel">Cancel</string>
@@ -189,7 +188,9 @@
     <string name="widget_target">Target</string>
     <string name="widget_reapply">Reapply</string>
     <string name="widget_rate_value">%d Hz</string>
-    <string name="widget_sent">Profile sent</string>
+    <string name="widget_sent">Sent</string>
     <string name="widget_no_apps">No apps selected</string>
     <string name="appearance">Appearance</string>
+    <string name="widget_pick">Choose profile</string>
+    <string name="widget_failed">Send failed</string>
 </resources>

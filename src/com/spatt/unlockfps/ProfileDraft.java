@@ -81,15 +81,39 @@ final class ProfileDraft {
         edit.apply();
     }
 
+    /** Reconcile v1 selections before any activity, widget or service can send them. */
+    void cleanMissingPackages(Set<String> launchable) {
+        Set<String> missing = FpsApplier.loadPackages(ctx);
+        missing.addAll(packages());
+        missing.removeAll(launchable);
+        missing.removeIf(pkg -> {
+            try {
+                ctx.getPackageManager().getApplicationInfo(pkg, 0);
+                return true;
+            } catch (PackageManager.NameNotFoundException absent) {
+                return false;
+            }
+        });
+        if (!missing.isEmpty()) removePackages(missing);
+    }
+
+    void removePackages(Set<String> removed) {
+        String key = FpsApplier.KEY_PACKAGES;
+        Set<String> active = FpsApplier.loadPackages(ctx);
+        Set<String> pending = selection(key, active);
+        SharedPreferences.Editor edit = prefs.edit();
+        if (active.removeAll(removed)) edit.putStringSet(key, active);
+        pending.removeAll(removed);
+        stageSet(edit, key, pending, active);
+        edit.apply();
+    }
+
     Set<String> suggestInstalledGames() {
         Set<String> packages = packages();
         if (!FpsApplier.isAutoAddGamesEnabled(ctx)) return packages;
         Set<String> ignored = selection(FpsApplier.KEY_IGNORED, FpsApplier.loadIgnoredPackages(ctx));
-        PackageManager pm = ctx.getPackageManager();
-        for (ApplicationInfo app : pm.getInstalledApplications(0)) {
-            if (FpsApplier.isGameApp(app) && !ignored.contains(app.packageName)
-                    && !ctx.getPackageName().equals(app.packageName)
-                    && pm.getLaunchIntentForPackage(app.packageName) != null) {
+        for (ApplicationInfo app : InstalledApps.get(ctx).entries()) {
+            if (FpsApplier.isGameApp(app) && !ignored.contains(app.packageName)) {
                 packages.add(app.packageName);
             }
         }

@@ -1,31 +1,31 @@
-# Unlock FPS (v1)
+# Unlock FPS
 
-Xiaomi / Redmi / POCO (HyperOS, MIUI) telefonlarda oyunların yenileme hızı sınırını kaldıran, root gerektirmeyen uygulama.
-Paket adı: `com.spatt.unlockfps` · sürüm: `1.0` (versionCode 1)
+Türkçe · [English](README.en.md)
 
-## GitHub bağlantıları
-Hepsi `src/com/spatt/unlockfps/Config.java` içinde. Varsayılan repo: `JrSpatt/UnlockFPS`. Farklı ad kullanırsan sadece `REPO` satırını değiştir.
+Unlock FPS, MIUI ve HyperOS cihazlarda oyunlar ve uygulamalar için hedef ekran yenileme hızını PowerKeeper’a iletir. Root gerektirmez. Oyunda ulaşılabilen FPS, oyunun kendi kare hızı sınırına ve cihazın desteğine bağlıdır.
 
-| Alan | Ne yapar |
-|---|---|
-| `GAMES_JSON_URL` | Oyun listesini günde bir GitHub'dan indirir (boşsa sadece uygulamadaki liste) |
-| `RELEASES_API_URL` | "Güncellemeleri denetle" için son sürüm adresi |
-| `RELEASES_PAGE_URL` | Güncelleme çıkınca / denetim başarısız olunca açılan sayfa |
-| `GAME_LIST_URL` | Hakkında ekranındaki "Oyun listesi" satırı |
+## Kurulum
 
-Oyun listesini değiştirmek için `data/games.json` dosyasını düzenle ve `version` sayısını artır.
+Android 8.0 veya üzeri ve Xiaomi’nin Pil ve Performans (PowerKeeper) bileşeni gerekir. [Son sürümden UnlockFPS.apk dosyasını indir](https://github.com/JrSpatt/UnlockFPS/releases/latest).
 
-## Derleme (GitHub Actions, bilgisayar gerekmez)
-1. Kodu yeni bir GitHub reposuna gönder.
-2. Repo → Settings → Secrets and variables → Actions içine ekle:
-   `KEYSTORE_BASE64` (Termux: `base64 -w0 anahtar.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
-3. Actions → "Build APK" → Run workflow. APK, çalışmanın "Artifacts" bölümünde `UnlockFPS` adıyla çıkar.
-4. `v1.0` gibi bir etiket (tag) gönderirsen APK otomatik olarak o sürüme eklenir.
+## Kullanım
 
-Anahtar yoksa derleme durur. Elle çalıştırmada (Run workflow) geçici debug anahtarlı test APK üretilir; etiketli sürümde asla.
+1. Hedef yenileme hızını seç. Seçicide ekranın bildirdiği hızlar gösterilir.
+2. Profilde yer alacak uygulamaları işaretle. Sistem uygulamaları **Sistem** sekmesindedir. Bir uygulamaya özel hız seçmek için adına uzun bas.
+3. **Uygula**’ya dokun. Widget, en son kaydedilen profili yeniden gönderir.
 
-## Beast mode
-Hero kartında hız seçicinin yanındaki alev logosu. Açıkken tüm başlatılabilir uygulamalara (sistem dahil)
-panelin desteklediği en yüksek hızı gönderir. Beast ve hız seçimleri yalnızca Uygula ile kaydedilen profile geçer. Beast kapatılıp profil uygulandığında diğer uygulamalara 60 Hz gönderilmez.
+**Otomatik gönderim** açıkken profil ekran açık olduğu sürece 15 saniyede bir yeniden gönderilir. **Beast Mode**, sistem uygulamaları dahil başlatılabilen tüm uygulamalar için ekranın en yüksek yenileme hızını ister. Bu modda otomatik gönderim aralığı 60 saniyedir.
 
-Widget (2×1), son uygulanan hedefi gösterir. Yenile düğmesi yalnızca bu profili tekrar gönderir.
+## Derleme
+
+GitHub Actions, JDK 17, Android SDK 35 ve Build Tools 35.0.0 kullanır. İmzalı sürümler için depo secret’ları `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` ve `KEY_PASSWORD` olarak tanımlanır. Bir `v*` etiketi gönderildiğinde **Build APK** iş akışı APK’yı derler ve GitHub Release’e ekler.
+
+Yerel test derlemesinde `ANDROID_HOME` Android SDK dizinini göstermelidir.
+
+```sh
+ALLOW_DEBUG_KEY=1 bash tools/build.sh
+```
+
+APK çıktısı `build/UnlockFPS.apk` konumundadır.
+
+[Değişiklik geçmişi](CHANGELOG.md)

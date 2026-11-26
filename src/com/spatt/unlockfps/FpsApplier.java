@@ -37,21 +37,11 @@ public final class FpsApplier {
 
     public static final int[] SUPPORTED_FPS = {60, 90, 120, 144};
 
-    public static final String[] DEFAULT_PACKAGES = {
-        "com.mobile.legends",
-        "com.roblox.client",
-        "com.mojang.minecraftpe"
-    };
-
     private FpsApplier() {}
 
     public static Set<String> loadPackages(Context ctx) {
         SharedPreferences sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        Set<String> saved = sp.getStringSet(KEY_PACKAGES, null);
-        if (saved == null) {
-            return new LinkedHashSet<>(Arrays.asList(DEFAULT_PACKAGES));
-        }
-        return new LinkedHashSet<>(saved);
+        return new LinkedHashSet<>(sp.getStringSet(KEY_PACKAGES, Collections.emptySet()));
     }
 
     public static Set<String> loadIgnoredPackages(Context ctx) {
@@ -226,8 +216,7 @@ public final class FpsApplier {
         }
         boolean beast = allowBeast && isBeastEnabled(ctx) && maxFps > 0;
         // Beast mode: every launchable app (system apps included) gets the panel maximum.
-        Set<String> all = new LinkedHashSet<>(pkgs);
-        if (beast) all.addAll(beastPackages(ctx));
+        Set<String> all = beast ? beastPackages(ctx) : pkgs;
         List<String> sent = new ArrayList<>();
         for (String pkg : all) {
             String trimmed = pkg.trim();
@@ -254,10 +243,6 @@ public final class FpsApplier {
 
     // ---------------------------------------------------------------- beast mode
 
-    private static volatile Set<String> beastCache = null;
-    private static volatile long beastCacheAt = 0L;
-    private static final long BEAST_CACHE_MS = 5L * 60L * 1000L;
-
     public static boolean isBeastEnabled(Context ctx) {
         return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_BEAST, false);
     }
@@ -271,31 +256,8 @@ public final class FpsApplier {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_BEAST_WARN_HIDDEN, hidden).apply();
     }
 
-    /** Forget the cached app list (call when apps are installed or removed). */
-    public static void invalidateBeastCache() {
-        beastCache = null;
-    }
-
-    /** Every app that has a launcher icon, user and system apps alike, except this app. Cached. */
     public static Set<String> beastPackages(Context ctx) {
-        Set<String> cached = beastCache;
-        long now = System.currentTimeMillis();
-        if (cached != null && now - beastCacheAt < BEAST_CACHE_MS) return cached;
-        Set<String> out = new LinkedHashSet<>();
-        try {
-            PackageManager pm = ctx.getPackageManager();
-            Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-            for (android.content.pm.ResolveInfo ri : pm.queryIntentActivities(main, 0)) {
-                if (ri.activityInfo != null && ri.activityInfo.packageName != null) {
-                    out.add(ri.activityInfo.packageName);
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        out.remove(ctx.getPackageName());
-        beastCache = out;
-        beastCacheAt = now;
-        return out;
+        return InstalledApps.get(ctx).packages();
     }
 
     /** Preinstalled apps, including ones a store has updated since (Chrome, Gmail, most Xiaomi apps). */

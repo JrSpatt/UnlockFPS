@@ -31,7 +31,6 @@
     <string name="limit_note">Unlock FPS ekranın kilidini açar, ama her oyunun kendi sınırı vardır. 60 MAX etiketli oyunlar ne yaparsan yap 60 FPS\'te kalır. Oyunun içindeki yüksek kare hızı seçeneğini de aç. Bir uygulamaya uzun basarak ipuçlarını görebilir veya ona özel hız verebilirsin.</string>
     <string name="loading_apps">Yüklü uygulamalar yükleniyor…</string>
     <string name="no_match">Eşleşen uygulama yok</string>
-    <string name="tip_keep_running">İpucu: Uygulama bilgisinde Otomatik başlatmayı aç ve Pil tasarrufunu Kısıtlama yok yap; böylece MIUI/HyperOS Unlock FPS\'i kapatmaz.</string>
     <string name="tag_120">120\'YE KADAR</string>
     <string name="tag_90">90 MAX</string>
     <string name="tag_60">60 MAX</string>
@@ -152,10 +151,10 @@
     <string name="v_clamped_refresh">Önce Ayarlar → Ekran → Yenileme hızı\'nın 120Hz (Yüksek) olduğunu kontrol et. 60Hz (Standart) iken hiçbir şey daha yükseğe çıkamaz.</string>
 
     <!-- Beast mode -->
-    <string name="beast_caption">Beast mode: her uygulama en yüksek hızda çalışır</string>
-    <string name="beast_strip">BEAST MODE · tüm uygulamalar %dHz</string>
+    <string name="beast_caption">Başlatılabilen uygulamalar için en yüksek yenileme hızı istenir.</string>
+    <string name="beast_strip">BEAST MODE · Hedef %d Hz</string>
     <string name="beast_title">Beast mode</string>
-    <string name="beast_warn_body">Beast mode sistemi tam performansa çıkarır: sistem uygulamaları dahil her uygulama en yüksek yenileme hızını (%dHz) alır. Pil tüketimi ve ısınma artabilir. Dikkatli kullan.</string>
+    <string name="beast_warn_body">Beast Mode, sistem uygulamaları dahil başlatılabilen tüm uygulamalar için ekranın desteklediği en yüksek yenileme hızını ister. Etkinleştirilsin mi?</string>
     <string name="beast_dont_show">Tekrar gösterme</string>
     <string name="beast_ok">Tamam</string>
     <string name="beast_cancel">İptal</string>
@@ -189,7 +188,9 @@
     <string name="widget_target">Hedef</string>
     <string name="widget_reapply">Yeniden uygula</string>
     <string name="widget_rate_value">%d Hz</string>
-    <string name="widget_sent">Profil gönderildi</string>
+    <string name="widget_sent">Gönderildi</string>
     <string name="widget_no_apps">Seçili uygulama yok</string>
     <string name="appearance">Görünüm</string>
+    <string name="widget_pick">Profil seç</string>
+    <string name="widget_failed">Gönderilemedi</string>
 </resources>
